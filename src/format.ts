@@ -61,3 +61,39 @@ export function formatResultValue(value: number): string {
 	const mantStr = String(Number(mantissa.toPrecision(3)));
 	return `${mantStr} × 10${superscript(exp)}`;
 }
+
+/**
+ * Pretty-print a backtick-delimited expression for display on a
+ * factor card. Applies Unicode substitutions so the card shows a
+ * readable formula rather than raw source syntax.
+ *
+ *   `*` → `·`   (but not `*` inside `10^…` scientific notation)
+ *   `pi` → `π`
+ *   `^n` → Unicode superscript
+ *   parentheses preserved as-is
+ */
+export function prettyPrintExpression(text: string): string {
+	let result = text;
+
+	// Named constants.
+	result = result.replace(/\bpi\b/g, 'π');
+
+	// Exponents: caret followed by a (possibly negative) integer or a
+	// parenthesised integer.  Convert to Unicode superscript.
+	result = result.replace(/\^(\((-?\d+)\))/g, (_m, _g1, inner: string) =>
+		superscript(Number(inner))
+	);
+	result = result.replace(/\^(-?\d+)/g, (_m, digits: string) =>
+		superscript(Number(digits))
+	);
+
+	// Multiplication: handle scientific notation `N*10<sup>` → `N × 10<sup>`
+	// before converting remaining `*` → `·`.
+	result = result.replace(
+		/(\d)\s*\*\s*10(?=[⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺])/g,
+		'$1 × 10'
+	);
+	result = result.replace(/\*/g, '·');
+
+	return result;
+}

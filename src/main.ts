@@ -166,7 +166,7 @@ export function renderDimensionalBlock(
 	onFlip?: OnFlipCallback
 ) {
 	const container = el.createDiv({ cls: 'dimensional-block' });
-	const { factors, errors } = parseBlock(source);
+	const { factors, errors, resultLabel } = parseBlock(source);
 
 	if (factors.length > 0) {
 		const { annotated, value, residualUnits } = compute(factors);
@@ -178,6 +178,9 @@ export function renderDimensionalBlock(
 				row.createDiv({ cls: 'dimensional-op', text: '×' });
 			}
 			const cardWrap = row.createDiv({ cls: 'dimensional-card-wrap' });
+			if (f.label) {
+				cardWrap.createDiv({ cls: 'dimensional-label', text: f.label });
+			}
 			const card = cardWrap.createDiv({ cls: 'dimensional-card' });
 			renderQuantityCell(card, f.numerator, 'dimensional-num');
 			if (f.denominator) {
@@ -205,7 +208,11 @@ export function renderDimensionalBlock(
 
 		row.createDiv({ cls: 'dimensional-op', text: '=' });
 
-		const resultCard = row.createDiv({
+		const resultWrap = row.createDiv({ cls: 'dimensional-card-wrap' });
+		if (resultLabel) {
+			resultWrap.createDiv({ cls: 'dimensional-label', text: resultLabel });
+		}
+		const resultCard = resultWrap.createDiv({
 			cls: 'dimensional-card dimensional-result',
 		});
 		const posRes = residualUnits.filter((u) => u.exponent > 0);

@@ -16,22 +16,17 @@
 - Color-coded cancellation pairs
 - Expression cards with backtick-delimited arithmetic
   (`` `4*pi*6.4^2` m^2 ``)
+- Side-panel live preview view (command: "Open Unitor preview panel")
+- Card flipping via flip button (⇅) in preview panel
+- Expression cards: pretty-printed formula on factor cards
+  (`4·π·6.4²`), numeric result only on the result card
+- Card annotations/labels (`# label` line before a factor)
+- Result card label (trailing `# label` at end of block)
 
 ### In progress / next
-- Card flipping (invert a factor in place)
-
-### Pending verification
-- Side-panel `Unitor preview` view: command "Open Unitor preview
-  panel", watches the active editor, re-renders on every
-  `editor-change` and `active-leaf-change`. If the cursor is inside a
-  `dimensional` block, shows only that block; otherwise shows all
-  blocks in the note.
+- (none currently — testing and feedback)
 
 ### Later
-- Expression cards: show original formula (pretty-printed) on
-  left-side cards, only resolve to number on the result card
-- Card annotations/labels on any factor card to describe what it
-  represents
 - Inline live rendering (CodeMirror 6 editor extension, like math
   blocks) — also consider how this interacts with card flipping and
   other interactive features

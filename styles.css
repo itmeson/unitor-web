@@ -7,11 +7,12 @@
 .dimensional-row {
 	display: flex;
 	flex-direction: row;
-	align-items: center;
+	align-items: flex-end;
 	flex-wrap: wrap;
-	gap: 0.5em;
+	gap: 0.5em 0.5em;
 	font-family: var(--font-text);
 	color: var(--text-normal);
+	padding-bottom: 0.5em;
 }
 
 .dimensional-card {
@@ -94,6 +95,7 @@
 	font-size: 1.2em;
 	color: var(--text-muted);
 	padding: 0 0.1em;
+	margin-bottom: 0.7em;
 }
 
 .dimensional-result {
@@ -105,6 +107,17 @@
 	font-family: var(--font-monospace);
 	font-size: 0.9em;
 	padding: 0.25em 0;
+}
+
+.dimensional-label {
+	font-size: 0.75em;
+	color: var(--text-muted);
+	text-align: center;
+	margin-bottom: 0.15em;
+	max-width: 12em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .dimensional-card-wrap {

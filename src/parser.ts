@@ -1,4 +1,4 @@
-import { superscript, formatResultValue } from './format';
+import { superscript, formatResultValue, prettyPrintExpression } from './format';
 import { evaluateExpression } from './expression';
 
 export interface UnitTerm {
@@ -29,6 +29,8 @@ export interface Factor {
 	raw: string;
 	/** 0-based line index within the block source. */
 	sourceLine: number;
+	/** Optional label from a preceding `# label` line. */
+	label?: string;
 }
 
 export interface ParseError {
@@ -40,6 +42,8 @@ export interface ParseError {
 export interface ParseResult {
 	factors: Factor[];
 	errors: ParseError[];
+	/** Label from a trailing `# label` line (no factor after it). */
+	resultLabel?: string;
 }
 
 // A quantity is: <number>[ *10^<exp>][ <unit-expression>]
@@ -123,8 +127,8 @@ function parseQuantity(text: string): Quantity | null {
 		const rest = trimmed.slice(closeIdx + 1).trim();
 		const units = parseUnitExpression(rest);
 		if (units === null) return null;
-		// Show the computed number in the card, nicely rounded.
-		return { value, units, displayValue: formatResultValue(value) };
+		// Show the pretty-printed formula on the factor card.
+		return { value, units, displayValue: prettyPrintExpression(exprText) };
 	}
 
 	const m = trimmed.match(QUANTITY_RE);
@@ -237,14 +241,29 @@ export function parseBlock(source: string): ParseResult {
 	const factors: Factor[] = [];
 	const errors: ParseError[] = [];
 	const lines = source.split('\n');
+	let pendingLabel: string | undefined;
 	lines.forEach((line, i) => {
-		if (!line.trim()) return;
+		const trimmed = line.trim();
+		if (!trimmed) {
+			pendingLabel = undefined;
+			return;
+		}
+		// Lines starting with `#` are labels for the next factor.
+		if (trimmed.startsWith('#')) {
+			pendingLabel = trimmed.slice(1).trim() || undefined;
+			return;
+		}
 		const result = parseLine(line, i);
 		if (typeof result === 'string') {
 			errors.push({ line: i + 1, raw: line, message: result });
+			pendingLabel = undefined;
 		} else {
+			if (pendingLabel) {
+				result.label = pendingLabel;
+				pendingLabel = undefined;
+			}
 			factors.push(result);
 		}
 	});
-	return { factors, errors };
+	return { factors, errors, resultLabel: pendingLabel };
 }
