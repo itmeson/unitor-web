@@ -1,99 +1,377 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import { Plugin, ItemView, WorkspaceLeaf, MarkdownView, TFile } from 'obsidian';
+import { DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab } from './settings';
+import { parseBlock, UnitTerm } from './parser';
+import {
+	compute,
+	AnnotatedQuantity,
+	AnnotatedUnitTerm,
+} from './compute';
+import { formatResultValue, superscript } from './format';
 
-// Remember to rename these classes and interfaces!
+/**
+ * Size of the cancellation color palette defined in `styles.css`.
+ * Pair IDs are mapped into this range with `pairId % PALETTE_SIZE`.
+ */
+const CANCEL_PALETTE_SIZE = 8;
 
-export default class MyPlugin extends Plugin {
+/**
+ * Render a compact piece of a unit term — symbol, optional exponent,
+ * with optional strikethrough + color class for cancelled pieces.
+ */
+function renderTermPiece(
+	parent: HTMLElement,
+	symbol: string,
+	exponent: number,
+	cancelledPairId: number | null
+) {
+	const text = exponent === 1 ? symbol : symbol + superscript(exponent);
+	let cls = 'dimensional-unit';
+	if (cancelledPairId !== null) {
+		const paletteIdx = cancelledPairId % CANCEL_PALETTE_SIZE;
+		cls += ` dimensional-cancelled dimensional-cancelled-${paletteIdx}`;
+	}
+	parent.createSpan({ cls, text });
+}
+
+/**
+ * Render a single unit term, handling full, none, or partial
+ * cancellation. A term with all slots uncancelled renders compactly
+ * (`s²`). With any cancellation, the term is expanded into one piece
+ * per cancellation "run" (consecutive cancelled slots sharing a pair
+ * ID collapse to a single piece like `s̶²`), followed by one live
+ * piece for the residual exponent.
+ */
+function renderUnitTerm(parent: HTMLElement, term: AnnotatedUnitTerm) {
+	const absExp = Math.abs(term.exponent);
+	if (absExp === 0) return;
+
+	if (term.cancelledSlots === 0) {
+		renderTermPiece(parent, term.symbol, absExp, null);
+		return;
+	}
+
+	let first = true;
+	const writeSeparator = () => {
+		if (!first) parent.createSpan({ text: '·' });
+		first = false;
+	};
+
+	// Chunk cancelled slots into runs of equal pair ID.
+	let i = 0;
+	while (i < term.cancelledSlots) {
+		const pairId = term.cancelledPairIds[i] ?? 0;
+		let j = i + 1;
+		while (
+			j < term.cancelledSlots &&
+			(term.cancelledPairIds[j] ?? 0) === pairId
+		) {
+			j++;
+		}
+		const runLen = j - i;
+		writeSeparator();
+		renderTermPiece(parent, term.symbol, runLen, pairId);
+		i = j;
+	}
+
+	const live = absExp - term.cancelledSlots;
+	if (live > 0) {
+		writeSeparator();
+		renderTermPiece(parent, term.symbol, live, null);
+	}
+}
+
+/**
+ * Render an annotated unit expression inline as "a·b/c·d", with
+ * positive-exponent terms on the left of the `/` and negative ones
+ * on the right (displayed with positive exponents). Each term is its
+ * own span so strikethroughs work per-term.
+ */
+function renderUnitExpressionInline(
+	parent: HTMLElement,
+	units: AnnotatedUnitTerm[]
+) {
+	const positives = units.filter((u) => u.exponent > 0);
+	const negatives = units.filter((u) => u.exponent < 0);
+
+	if (positives.length === 0 && negatives.length === 0) return;
+
+	if (positives.length > 0) {
+		positives.forEach((t, i) => {
+			if (i > 0) parent.createSpan({ text: '·' });
+			renderUnitTerm(parent, t);
+		});
+	} else {
+		parent.createSpan({ text: '1' });
+	}
+
+	if (negatives.length > 0) {
+		parent.createSpan({ text: '/' });
+		negatives.forEach((t, i) => {
+			if (i > 0) parent.createSpan({ text: '·' });
+			renderUnitTerm(parent, t);
+		});
+	}
+}
+
+/**
+ * Render a quantity into a factor-card cell: value, space, unit
+ * expression.
+ */
+function renderQuantityCell(
+	parent: HTMLElement,
+	q: AnnotatedQuantity,
+	cellCls: string
+) {
+	const cell = parent.createDiv({ cls: `dimensional-cell ${cellCls}` });
+	cell.createSpan({
+		cls: 'dimensional-value',
+		text: q.displayValue ?? String(q.value),
+	});
+	if (q.units.length > 0) {
+		cell.createSpan({ text: ' ' });
+		renderUnitExpressionInline(cell, q.units);
+	}
+}
+
+/**
+ * Render a plain (non-annotated) unit term list — used for the
+ * residual units in the result card. No cancellation markup.
+ */
+function renderResidualTerms(parent: HTMLElement, terms: UnitTerm[]) {
+	terms.forEach((t, i) => {
+		if (i > 0) parent.createSpan({ text: '·' });
+		const abs = Math.abs(t.exponent);
+		const text = abs === 1 ? t.symbol : t.symbol + superscript(abs);
+		parent.createSpan({ cls: 'dimensional-unit', text });
+	});
+}
+
+/**
+ * Render a single dimensional block's source into the given host
+ * element. Used by both the reading-mode code block processor and
+ * the live preview side-panel view.
+ */
+export function renderDimensionalBlock(source: string, el: HTMLElement) {
+	const container = el.createDiv({ cls: 'dimensional-block' });
+	const { factors, errors } = parseBlock(source);
+
+	if (factors.length > 0) {
+		const { annotated, value, residualUnits } = compute(factors);
+
+		const row = container.createDiv({ cls: 'dimensional-row' });
+
+		annotated.forEach((f, i) => {
+			if (i > 0) {
+				row.createDiv({ cls: 'dimensional-op', text: '×' });
+			}
+			const card = row.createDiv({ cls: 'dimensional-card' });
+			renderQuantityCell(card, f.numerator, 'dimensional-num');
+			if (f.denominator) {
+				card.createDiv({ cls: 'dimensional-bar' });
+				renderQuantityCell(card, f.denominator, 'dimensional-den');
+			}
+		});
+
+		row.createDiv({ cls: 'dimensional-op', text: '=' });
+
+		const resultCard = row.createDiv({
+			cls: 'dimensional-card dimensional-result',
+		});
+		const posRes = residualUnits.filter((u) => u.exponent > 0);
+		const negRes = residualUnits.filter((u) => u.exponent < 0);
+
+		const resultTop = resultCard.createDiv({ cls: 'dimensional-cell' });
+		resultTop.createSpan({
+			cls: 'dimensional-value',
+			text: formatResultValue(value),
+		});
+		if (posRes.length > 0) {
+			resultTop.createSpan({ text: ' ' });
+			renderResidualTerms(resultTop, posRes);
+		}
+
+		if (negRes.length > 0) {
+			resultCard.createDiv({ cls: 'dimensional-bar' });
+			const resultBot = resultCard.createDiv({
+				cls: 'dimensional-cell',
+			});
+			renderResidualTerms(resultBot, negRes);
+		}
+	}
+
+	for (const err of errors) {
+		container.createDiv({
+			cls: 'dimensional-error',
+			text: `line ${err.line}: ${err.message}`,
+		});
+	}
+}
+
+/**
+ * Find all `dimensional` fenced code blocks in a document and return
+ * each one's inner source plus line range (0-indexed, inclusive of
+ * the opening/closing fence lines).
+ */
+interface DimensionalBlockLoc {
+	source: string;
+	fromLine: number;
+	toLine: number;
+}
+
+export function findDimensionalBlocks(doc: string): DimensionalBlockLoc[] {
+	const lines = doc.split('\n');
+	const blocks: DimensionalBlockLoc[] = [];
+	const fenceRe = /^(\s*)(```+)\s*dimensional\s*$/;
+	let i = 0;
+	while (i < lines.length) {
+		const line = lines[i] ?? '';
+		const m = fenceRe.exec(line);
+		if (!m) {
+			i++;
+			continue;
+		}
+		const fence = m[2] ?? '```';
+		const closeRe = new RegExp('^\\s*' + fence + '\\s*$');
+		const from = i;
+		let j = i + 1;
+		const bodyLines: string[] = [];
+		while (j < lines.length && !closeRe.test(lines[j] ?? '')) {
+			bodyLines.push(lines[j] ?? '');
+			j++;
+		}
+		const to = j < lines.length ? j : lines.length - 1;
+		blocks.push({ source: bodyLines.join('\n'), fromLine: from, toLine: to });
+		i = j + 1;
+	}
+	return blocks;
+}
+
+export const DIMENSIONAL_PREVIEW_VIEW = 'dimensional-preview';
+
+/**
+ * Side-panel view that live-renders `dimensional` blocks from the
+ * active markdown editor. If the cursor sits inside a block, only
+ * that block is shown; otherwise all blocks in the document are
+ * shown stacked.
+ */
+export class DimensionalPreviewView extends ItemView {
+	private lastFile: TFile | null = null;
+
+	constructor(leaf: WorkspaceLeaf) {
+		super(leaf);
+	}
+
+	getViewType() {
+		return DIMENSIONAL_PREVIEW_VIEW;
+	}
+
+	getDisplayText() {
+		return 'Unitor preview';
+	}
+
+	getIcon() {
+		return 'ruler';
+	}
+
+	async onOpen() {
+		this.contentEl.addClass('dimensional-preview-view');
+		this.registerEvent(
+			this.app.workspace.on('active-leaf-change', () => this.refresh())
+		);
+		this.registerEvent(
+			this.app.workspace.on('editor-change', () => this.refresh())
+		);
+		this.refresh();
+	}
+
+	async onClose() {}
+
+	refresh() {
+		const md = this.app.workspace.getActiveViewOfType(MarkdownView);
+		this.contentEl.empty();
+		this.contentEl.addClass('dimensional-preview-view');
+
+		if (!md) {
+			this.contentEl.createDiv({
+				cls: 'dimensional-preview-empty',
+				text: 'Open a markdown note to preview Unitor blocks.',
+			});
+			return;
+		}
+
+		this.lastFile = md.file;
+		const editor = md.editor;
+		const doc = editor.getValue();
+		const blocks = findDimensionalBlocks(doc);
+
+		if (blocks.length === 0) {
+			this.contentEl.createDiv({
+				cls: 'dimensional-preview-empty',
+				text: 'No `dimensional` blocks in this note yet.',
+			});
+			return;
+		}
+
+		const cursorLine = editor.getCursor().line;
+		const active = blocks.find(
+			(b) => cursorLine >= b.fromLine && cursorLine <= b.toLine
+		);
+		const toRender = active ? [active] : blocks;
+
+		for (const b of toRender) {
+			const wrap = this.contentEl.createDiv({ cls: 'dimensional-preview-item' });
+			renderDimensionalBlock(b.source, wrap);
+		}
+	}
+}
+
+export default class DimensionalPlugin extends Plugin {
 	settings: MyPluginSettings;
 
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
+		this.registerMarkdownCodeBlockProcessor('dimensional', (source, el, _ctx) => {
+			renderDimensionalBlock(source, el);
 		});
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
+		this.registerView(
+			DIMENSIONAL_PREVIEW_VIEW,
+			(leaf) => new DimensionalPreviewView(leaf)
+		);
 
-		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			}
+			id: 'open-unitor-preview',
+			name: 'Open Unitor preview panel',
+			callback: () => this.activatePreview(),
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-
 	}
 
-	onunload() {
+	async activatePreview() {
+		const { workspace } = this.app;
+		let leaf = workspace.getLeavesOfType(DIMENSIONAL_PREVIEW_VIEW)[0];
+		if (!leaf) {
+			const right = workspace.getRightLeaf(false);
+			if (!right) return;
+			leaf = right;
+			await leaf.setViewState({ type: DIMENSIONAL_PREVIEW_VIEW, active: true });
+		}
+		workspace.revealLeaf(leaf);
 	}
+
+	onunload() {}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			(await this.loadData()) as Partial<MyPluginSettings>
+		);
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
-	}
-}
-
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
 	}
 }
