@@ -27,6 +27,8 @@ export interface Factor {
 	numerator: Quantity;
 	denominator?: Quantity;
 	raw: string;
+	/** 0-based line index within the block source. */
+	sourceLine: number;
 }
 
 export interface ParseError {
@@ -173,7 +175,7 @@ function splitOnLineLevelDivision(line: string): string[] {
 	return parts;
 }
 
-export function parseLine(line: string): Factor | string {
+export function parseLine(line: string, sourceLine: number): Factor | string {
 	const trimmed = line.trim();
 	if (!trimmed) return 'empty line';
 
@@ -185,7 +187,7 @@ export function parseLine(line: string): Factor | string {
 		const text = parts[0] ?? '';
 		const q = parseQuantity(text);
 		if (!q) return `could not parse quantity: "${text}"`;
-		return { numerator: q, raw: line };
+		return { numerator: q, raw: line, sourceLine };
 	}
 	if (parts.length === 2) {
 		const numText = parts[0] ?? '';
@@ -194,9 +196,41 @@ export function parseLine(line: string): Factor | string {
 		const den = parseQuantity(denText);
 		if (!num) return `could not parse numerator: "${numText}"`;
 		if (!den) return `could not parse denominator: "${denText}"`;
-		return { numerator: num, denominator: den, raw: line };
+		return { numerator: num, denominator: den, raw: line, sourceLine };
 	}
 	return `expected at most one " / " per line, got ${parts.length - 1}`;
+}
+
+/**
+ * Flip a factor line: swap numerator and denominator. The
+ * transformation preserves the original text, just rearranges it.
+ *
+ * - `5 km`          → `1 / 5 km`
+ * - `1 / 5 km`      → `5 km`        (bare-1 numerator collapses)
+ * - `1.609 km / 1 mi` → `1 mi / 1.609 km`
+ */
+export function flipLine(line: string): string {
+	const trimmed = line.trim();
+	const parts = splitOnLineLevelDivision(trimmed);
+
+	if (parts.length === 1) {
+		// Bare quantity → fraction with 1 in the numerator.
+		return `1 / ${trimmed}`;
+	}
+
+	if (parts.length === 2) {
+		const numText = (parts[0] ?? '').trim();
+		const denText = (parts[1] ?? '').trim();
+
+		// If the new denominator (old numerator) is bare "1", collapse
+		// to just the new numerator (old denominator) without a fraction.
+		if (numText === '1') return denText;
+
+		return `${denText} / ${numText}`;
+	}
+
+	// Shouldn't happen on a valid line; return unchanged.
+	return trimmed;
 }
 
 export function parseBlock(source: string): ParseResult {
@@ -205,7 +239,7 @@ export function parseBlock(source: string): ParseResult {
 	const lines = source.split('\n');
 	lines.forEach((line, i) => {
 		if (!line.trim()) return;
-		const result = parseLine(line);
+		const result = parseLine(line, i);
 		if (typeof result === 'string') {
 			errors.push({ line: i + 1, raw: line, message: result });
 		} else {

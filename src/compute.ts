@@ -26,6 +26,7 @@ export interface AnnotatedFactor {
 	numerator: AnnotatedQuantity;
 	denominator?: AnnotatedQuantity;
 	raw: string;
+	sourceLine: number;
 }
 
 export interface ComputedResult {
@@ -70,6 +71,7 @@ export function compute(factors: Factor[]): ComputedResult {
 		numerator: cloneQuantity(f.numerator),
 		denominator: f.denominator ? cloneQuantity(f.denominator) : undefined,
 		raw: f.raw,
+		sourceLine: f.sourceLine,
 	}));
 
 	interface Slot {
