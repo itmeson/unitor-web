@@ -37,12 +37,12 @@ const STORAGE_KEY = 'unitor:block';
 const FLASH_DURATION_MS = 1500;
 
 const DEFAULT_BLOCK = [
-	'# surface area of Earth',
-	'`4*pi*6.4^2` m^2',
-	'',
-	'5 km',
-	'1 hr / 3600 s',
-	'# speed in km/s',
+	'#speed in miles per hour',
+	'30 mile/hr',
+	'1609 meters / 1 mile',
+	'1 hr / 60 min',
+	'1 min / 60 sec',
+	'#speed in meters per sec',
 ].join('\n');
 
 function $(id: string): HTMLElement {

@@ -8,25 +8,27 @@ This is the standalone web-app version. Its older sibling is an Obsidian
 plugin; the pure-logic core (parser, compute, formatter, expression
 evaluator) is shared between them.
 
+**Live demo:** <https://itmeson.github.io/unitor-web/>
+
 ## What it looks like
 
 Type a block like this into the textarea:
 
 ```
-# surface area of Earth
-`4*pi*6.4^2` m^2
-
-5 km
-1 hr / 3600 s
-# speed in km/s
+#speed in miles per hour
+30 mile/hr
+1609 meters / 1 mile
+1 hr / 60 min
+1 min / 60 sec
+#speed in meters per sec
 ```
 
-The preview renders a horizontal row of cards joined by `×` and `=`, with
-units struck through and color-matched where they cancel between adjacent
-cards. The first section shows the surface area (with the expression
-`4·π·6.4²` displayed on the factor card and the numeric result on the
-result card). The second section multiplies `5 km` by `1 hr / 3600 s`,
-with no cancellation (`hr` and `s` remain as residual units).
+The preview renders a horizontal row of cards joined by `×` and `=`. Each
+conversion factor cancels a unit against its neighbor — `mile` cancels
+with `mile`, `hr` with `hr`, `min` with `min` — in matching colors, so a
+student can see the dimensional bookkeeping as they set it up. The
+residual units on the result card are `meters / sec`, with the numeric
+answer filled in. The `#` lines label the first and last cards.
 
 ## Input syntax
 
