@@ -1,4 +1,4 @@
-import { superscript, formatResultValue, prettyPrintExpression } from './format';
+import { superscript, prettyPrintExpression } from './format';
 import { evaluateExpression } from './expression';
 
 export interface UnitTerm {

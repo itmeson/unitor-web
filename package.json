@@ -1,29 +1,32 @@
 {
-	"name": "obsidian-sample-plugin",
-	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
-	"main": "main.js",
+	"name": "unitor-web",
+	"version": "0.1.0",
+	"description": "A pedagogical dimensional-analysis tool for physics/science students. Web-app port of the Unitor Obsidian plugin.",
+	"private": true,
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"version": "node version-bump.mjs && git add manifest.json versions.json",
+		"typecheck": "tsc -noEmit -skipLibCheck",
+		"test": "node scripts/run-harness.mjs",
 		"lint": "eslint ."
 	},
-	"keywords": [],
+	"keywords": [
+		"dimensional-analysis",
+		"physics",
+		"units",
+		"pedagogy"
+	],
+	"author": "Mark Betnel <mbetnel@seattleacademy.org>",
 	"license": "0-BSD",
 	"devDependencies": {
+		"@eslint/js": "9.30.1",
 		"@types/node": "^16.11.6",
 		"esbuild": "0.25.5",
-		"eslint-plugin-obsidianmd": "0.1.9",
 		"globals": "14.0.0",
+		"jiti": "2.6.1",
 		"tslib": "2.4.0",
 		"typescript": "^5.8.3",
-		"typescript-eslint": "8.35.1",
-		"@eslint/js": "9.30.1",
-		"jiti": "2.6.1"
-	},
-	"dependencies": {
-		"obsidian": "latest"
+		"typescript-eslint": "8.35.1"
 	}
 }

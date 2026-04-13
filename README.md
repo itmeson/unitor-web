@@ -1,90 +1,133 @@
-# Obsidian Sample Plugin
+# Unitor
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+A pedagogical dimensional-analysis tool for physics and science students.
+Write a chain of factor cards, see units cancel between them in matching
+colors, and read the final quantity off the result card.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+This is the standalone web-app version. Its older sibling is an Obsidian
+plugin; the pure-logic core (parser, compute, formatter, expression
+evaluator) is shared between them.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+## What it looks like
 
-## First time developing plugins?
+Type a block like this into the textarea:
 
-Quick starting guide for new plugin devs:
+```
+# surface area of Earth
+`4*pi*6.4^2` m^2
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
-
-## Releasing new releases
-
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
-
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
-
-## Adding your plugin to the community plugin list
-
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
-
-## How to use
-
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
-
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+5 km
+1 hr / 3600 s
+# speed in km/s
 ```
 
-If you have multiple URLs, you can also do:
+The preview renders a horizontal row of cards joined by `×` and `=`, with
+units struck through and color-matched where they cancel between adjacent
+cards. The first section shows the surface area (with the expression
+`4·π·6.4²` displayed on the factor card and the numeric result on the
+result card). The second section multiplies `5 km` by `1 hr / 3600 s`,
+with no cancellation (`hr` and `s` remain as residual units).
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
+## Input syntax
+
+A **block** is the text in the textarea. Each non-empty, non-comment line
+is a factor (one card); the result card is computed automatically.
+
+- **Basic quantity:** `5 km`, `9.8 m/s^2`, `0.5 kg*m^2/s^2`. `*` is
+  unit-level multiplication, `/` (with no spaces) is unit-level division.
+- **Fraction card:** ` / ` with spaces on both sides splits a line into
+  numerator and denominator: `1.609 km / 1 mi`.
+- **Expression card:** backtick-delimited arithmetic in the numerator or
+  denominator: `` `4*pi*6.4^2` m^2 ``. Constants `pi`, `π`, and `e` are
+  recognised. The factor card shows the pretty-printed expression
+  (`4·π·6.4²`); the result card resolves to the number.
+- **Scientific notation:** `3*10^8` parses as 3 × 10⁸ and displays the same
+  way on the card.
+- **Bare dimensionless numerators:** `1 / 5 km` is valid — the numerator
+  is just `1`.
+- **Labels:** a `# label` line immediately before a factor attaches a
+  caption above that card. A trailing `# label` at the end of the block
+  (with no factor after it) labels the result card.
+
+Parse errors are reported per-line below the preview; one bad line
+doesn't break the rest of the block.
+
+## Interactive features
+
+- **Live preview.** Every keystroke re-renders.
+- **Cancellation.** Matching unit slots between adjacent cards are struck
+  through in a color unique to that pair (8-color palette, cycles if
+  there are more than 8 pairs).
+- **Flip buttons (⇅).** Each factor card has a small flip button that
+  swaps its numerator and denominator and rewrites the corresponding
+  source line. Useful when a student sets up a chain, sees units don't
+  cancel the way they expected, and flips a card to fix it.
+- **Persistent session.** The textarea content is saved to
+  `localStorage`, so reopening the page restores your last block.
+- **Shareable URLs.** The textarea content is also encoded in the URL
+  hash. The "Copy share link" button in the header copies the current
+  URL; pasting it into another browser loads the same block. If you
+  edit the URL hash directly, the page updates to match.
+
+The priority on load is URL hash → localStorage → a small default block,
+so a shared link always wins over a saved session.
+
+## Running locally
+
+Requirements: Node.js 16 or newer. (Only needed for development — the
+built app is static HTML/CSS/JS.)
+
+```
+npm install
+npm run dev
 ```
 
-## API Documentation
+Then open <http://127.0.0.1:5173>. The dev server rebuilds and serves
+`dist/app.js` on every save.
 
-See https://docs.obsidian.md
+Other scripts:
+
+- `npm run build` — type-check and produce a production bundle in
+  `dist/app.js`.
+- `npm run typecheck` — TypeScript check only, no emit.
+- `npm run test` — run the parser/compute/format harness in
+  `src/harness.ts`.
+- `npm run lint` — ESLint.
+
+## Deploying
+
+The app is a static site: `index.html`, `styles.css`, and `dist/app.js`.
+Any static host will serve it. There is no backend.
+
+## Project layout
+
+```
+src/
+  app.ts         — entry point: DOM wiring, persistence, flip/share UI
+  render.ts      — DOM renderer (pure function of source string)
+  parser.ts      — parseBlock, parseLine, parseUnitExpression, flipLine
+  compute.ts     — slot-based cancellation with pair IDs
+  format.ts      — formatResultValue, superscript, prettyPrintExpression
+  expression.ts  — recursive-descent evaluator for backtick expressions
+  harness.ts     — test harness
+scripts/
+  run-harness.mjs — bundles src/harness.ts and runs it under node
+index.html       — two-pane layout: source textarea left, preview right
+styles.css       — self-contained CSS custom properties with dark-mode
+                   override via prefers-color-scheme
+esbuild.config.mjs — dev server + production bundler
+```
+
+`parser.ts`, `compute.ts`, `format.ts`, and `expression.ts` have zero DOM
+or browser dependencies and can be run in Node directly. `render.ts` and
+`app.ts` are the only files that touch the DOM.
+
+## Author
+
+Mark Betnel, Seattle Academy. Originally built as an Obsidian plugin for
+classroom use; the web app exists so students can access it without
+installing anything.
+
+## License
+
+0-BSD. See `LICENSE`.

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Unitor — Dimensional Analysis</title>
+	<link rel="stylesheet" href="styles.css" />
+	<style>
+		/* Page chrome. Card styling for the preview pane lives in
+		   styles.css; this block covers the app shell (header + source
+		   textarea + preview container) and follows the same custom-
+		   property palette so light/dark mode stays consistent. */
+		html, body {
+			margin: 0;
+			padding: 0;
+			height: 100%;
+			font-family: var(--unitor-font-text, system-ui, sans-serif);
+		}
+
+		body {
+			display: flex;
+			flex-direction: column;
+			min-height: 100vh;
+			background: var(--unitor-background-primary-alt, #fafafa);
+			color: var(--unitor-text-normal, #222);
+		}
+
+		header {
+			padding: 0.75rem 1rem;
+			border-bottom: 1px solid var(--unitor-background-modifier-border, #ddd);
+			background: var(--unitor-background-primary, #fff);
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 1rem;
+		}
+
+		header .branding {
+			min-width: 0;
+		}
+
+		header h1 {
+			margin: 0;
+			font-size: 1.15rem;
+			font-weight: 600;
+		}
+
+		header p {
+			margin: 0.2rem 0 0;
+			font-size: 0.85rem;
+			color: var(--unitor-text-muted, #666);
+		}
+
+		header .actions {
+			display: flex;
+			align-items: center;
+			gap: 0.5rem;
+		}
+
+		.app-button {
+			appearance: none;
+			border: 1px solid var(--unitor-background-modifier-border, #ccc);
+			border-radius: 4px;
+			background: var(--unitor-background-secondary, #f6f6f6);
+			color: var(--unitor-text-normal, #222);
+			font: inherit;
+			font-size: 0.85rem;
+			padding: 0.35rem 0.7rem;
+			cursor: pointer;
+			transition: background 0.15s ease, color 0.15s ease;
+			white-space: nowrap;
+		}
+
+		.app-button:hover {
+			background: var(--unitor-interactive-hover, #eaeaea);
+		}
+
+		.app-button:focus-visible {
+			outline: 2px solid var(--unitor-text-muted, #888);
+			outline-offset: 1px;
+		}
+
+		.app-button.is-flashing {
+			color: var(--unitor-text-muted, #666);
+		}
+
+		main.workspace {
+			flex: 1;
+			display: grid;
+			grid-template-columns: minmax(280px, 1fr) 2fr;
+			gap: 1px;
+			background: var(--unitor-background-modifier-border, #ddd);
+			min-height: 0;
+		}
+
+		.pane {
+			background: var(--unitor-background-primary, #fff);
+			display: flex;
+			flex-direction: column;
+			min-height: 0;
+		}
+
+		.pane-header {
+			font-size: 0.75rem;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			color: var(--unitor-text-muted, #888);
+			padding: 0.5rem 0.75rem;
+			border-bottom: 1px solid var(--unitor-background-modifier-border, #eee);
+		}
+
+		#source {
+			flex: 1;
+			width: 100%;
+			box-sizing: border-box;
+			border: 0;
+			outline: 0;
+			padding: 0.75rem;
+			font-family: var(--unitor-font-mono, ui-monospace, Menlo, Consolas, monospace);
+			font-size: 0.95rem;
+			line-height: 1.45;
+			resize: none;
+			background: transparent;
+			color: inherit;
+		}
+
+		#preview {
+			flex: 1;
+			overflow: auto;
+			padding: 0.25rem 0.5rem;
+		}
+
+		@media (max-width: 720px) {
+			main.workspace {
+				grid-template-columns: 1fr;
+				grid-template-rows: minmax(160px, 1fr) 2fr;
+			}
+		}
+	</style>
+</head>
+<body>
+	<header>
+		<div class="branding">
+			<h1>Unitor</h1>
+			<p>Pedagogical dimensional analysis for physics students.</p>
+		</div>
+		<div class="actions">
+			<button
+				id="share-link"
+				class="app-button"
+				type="button"
+				data-default-label="Copy share link"
+				title="Copy a link to this computation that restores the current source"
+			>Copy share link</button>
+		</div>
+	</header>
+
+	<main class="workspace">
+		<section class="pane" aria-label="Source">
+			<div class="pane-header">Source</div>
+			<textarea id="source" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+		</section>
+
+		<section class="pane" aria-label="Preview">
+			<div class="pane-header">Preview</div>
+			<div id="preview"></div>
+		</section>
+	</main>
+
+	<script src="dist/app.js" defer></script>
+</body>
+</html>

@@ -1,162 +1,138 @@
-# Dimensional plugin — roadmap and deferred issues
+# Unitor web app — roadmap and deferred issues
 
 ## Roadmap
 
 ### Done
-- Code block processor registered for `dimensional` language tag
-- Line parser for quantities and factors
-- Pairwise unit cancellation
-- Card-based rendering with fraction bars and result card
-- Scientific notation input (`3*10^8`) and display (`3 × 10⁸`)
-- Result rounding to 3 sig figs with auto scientific notation for
-  large/small magnitudes
-- Bare dimensionless numerators (`1 / 5 km`)
-- Compound unit expressions (`kg*m/s^2`, `m^2`)
-- Partial cancellation rendering
-- Color-coded cancellation pairs
-- Expression cards with backtick-delimited arithmetic
-  (`` `4*pi*6.4^2` m^2 ``)
-- Side-panel live preview view (command: "Open Unitor preview panel")
-- Card flipping via flip button (⇅) in preview panel
-- Expression cards: pretty-printed formula on factor cards
-  (`4·π·6.4²`), numeric result only on the result card
-- Card annotations/labels (`# label` line before a factor)
-- Result card label (trailing `# label` at end of block)
+- TypeScript + esbuild scaffold with dev server, production build,
+  typecheck, lint, and test scripts
+- Pure-logic core ported from the Obsidian plugin: parser, compute,
+  format, expression evaluator (no Obsidian imports, runs under node)
+- Test harness (`src/harness.ts`) runnable via `npm run test`
+- DOM renderer (`src/render.ts`) rewritten as a standalone function,
+  replacing Obsidian's `createDiv`/`createSpan`/`createEl` helpers
+- Self-contained CSS with `--unitor-*` custom properties and a
+  `prefers-color-scheme: dark` override
+- Two-pane layout: source textarea on the left, live preview on the
+  right, re-rendering on every keystroke
+- URL hash + localStorage persistence with priority ordering
+  (hash → localStorage → default block), and a hashchange listener so
+  address-bar edits and paste-into-private-window both work
+- "Copy share link" header button with clipboard-API fallback messaging
+- Card flipping: each factor card has a ⇅ button that rewrites its
+  source line via `flipLine`, updates the textarea, and runs the full
+  persist + re-render pipeline
+- Repo cleanup: deleted `src/_legacy/` and the Obsidian release
+  artifacts (`manifest.json`, `version-bump.mjs`, `versions.json`);
+  dropped their entries from `tsconfig.json` and `eslint.config.mts`
 
 ### In progress / next
-- (none currently — testing and feedback)
+- Decide on hosting for students (GitHub Pages live demo is planned)
+  and add a short deployment section to `README.md` when that's live
 
 ### Later
-- Inline live rendering (CodeMirror 6 editor extension, like math
-  blocks) — also consider how this interacts with card flipping and
-  other interactive features
-- Card addition and subtraction with unit compatibility checking
-- Stored conversion cards / unit definition library for reuse
-- Preview panel tuning: revisit debounce rate (none today) and the
-  rule for which block(s) to display (currently: cursor-in-block →
-  that one, else all)
-- Literal `×` and Unicode superscripts in source
+- Multiple blocks in one session (see below)
+- Card addition and subtraction with unit-compatibility errors
+- Stored / named conversion cards for reuse
+- Export: copy as text, save as PDF, paste into Google Docs
+- Named physical constants (c, g, h, k_B, …); today only `pi`, `π`, `e`
+- Literal `×` accepted as a multiplier in source
+- Unicode superscripts accepted in source
 - Parentheses in unit expressions
 - Fractional unit exponents
-- Standard conversion shortcuts (editor command inserting a factor)
-- Minimum sig figs derived from inputs
+- Minimum sig figs derived from inputs (the current 3-sig-fig cap is a
+  ceiling; add a floor)
 - Configurable max sig figs
-- Strict-teaching sig-figs mode
-- Named constants (π, c, g, …)
+- Strict-teaching sig-figs mode (display exactly the min sig figs of
+  the inputs)
+- Inline rendering inside the textarea (would require swapping the
+  plain `<textarea>` for a code-editor component; lower value now that
+  the side preview is already live)
 
 ---
 
 ## Details
 
-## Expression cards — follow-ups
+### Multiple blocks
+Today the textarea is a single block. A student documenting a full
+problem might want several separately-computed chains on one page.
+Options to consider:
+
+- **Blank-line separation.** Two or more consecutive blank lines end
+  the current block and start a new one. Zero new UI; parser changes
+  only.
+- **Tabs or named sections.** A navigation control lets the user flip
+  between blocks. More discoverable but adds UI state.
+- **Document-like multi-pane view.** Each block gets its own mini
+  textarea + preview pair. Closest to the original plugin vision
+  where a vault note could contain many fenced blocks.
+
+Interacts with URL sharing: with multiple blocks, the hash either
+encodes them all (bulkier URL) or only a single active block.
+
+### Export
+Students need to paste worked problems into lab reports. Possible
+outputs:
+
+- **Plain text** — already works via the textarea. Could add a "Copy
+  source" button alongside "Copy share link".
+- **Markdown / unicode** — copy a pretty text representation of the
+  whole chain (`5 km · 1 hr / 3600 s = 0.00139 km/s`). Handy for
+  pasting into Google Docs.
+- **Image (PNG / SVG)** — render the preview to an image and download.
+  Works well for visual cancellation but can't be edited downstream.
+- **PDF** — useful for handing in homework; same caveats as image.
+
+Start with the text / markdown option since it's cheapest and covers
+the common "paste into doc" flow.
+
+### Expression cards — follow-ups
 Backtick-delimited expressions work: `` `4*pi*6.4^2` m^2 `` evaluates
-at parse time and plugs into the Quantity pipeline. Follow-ups:
-- Optionally show the formula text alongside the computed value on
-  the card, rather than just the number. Would need UI for a toggle
-  or a separate card layout.
+at parse time and the pretty-printed formula (`4·π·6.4²`) is shown on
+the factor card. Follow-ups:
+
 - Add more named constants (c, g, h, k_B, …). Today only `pi`, `π`,
   and `e` are supported.
+- Consider a small fraction or sub/superscript layout for complex
+  pretty-printed expressions instead of flat inline text.
 
-## Number notation in parser — remaining niceties
+### Number notation in parser — remaining niceties
 Scientific notation `3*10^8` is parsed and rendered as `3 × 10⁸`.
 Still open:
+
 - Accept a literal `×` as a multiplier (so `3 × 10^8` also works).
 - Accept Unicode superscript digits directly in source.
 
-## Compound units — remaining follow-ups
-Compound unit expressions (`kg*m/s^2`, `m^2`, etc.) work. Not yet
+### Compound units — remaining follow-ups
+Compound unit expressions (`kg*m/s^2`, `m^2`, …) work. Not yet
 addressed:
+
 - Parentheses in unit expressions (currently strictly left-to-right).
 - Fractional exponents (only integers today).
 
-## Standard conversion shortcuts
-Build a small library of common conversion factors with shortcuts.
+### Stored conversion cards / unit definitions
+Let frequently-used conversion factors live in a shared library so
+students don't have to retype them. Possible approaches in a web-app
+context:
 
-Two flavors to consider:
-- **Bare-name expansion in source**, e.g. writing `mi_to_km` on a line
-  expands to `1.609 km / 1 mi` at parse time. Terse, but adds parser
-  complexity and requires memorizing names.
-- **Editor command / slash-menu** that inserts the conversion text at
-  the cursor inside the code block. Pure UX layer, zero parser risk,
-  more discoverable. Use Obsidian's `addCommand` with an
-  `editorCallback`.
+- **Sidebar / palette.** A collapsible panel lists saved factors; click
+  one to insert it at the cursor in the textarea.
+- **`@name` expansion in source.** Writing `@mi_to_km` expands to
+  `1.609 km / 1 mi` at parse time. Terse but adds parser complexity
+  and requires memorizing names.
+- **Keyboard shortcut / slash menu.** Type `/mi` in the textarea and
+  get an autocomplete of matching factors.
 
-Lean toward the editor-command approach first; it's a place to build
-up a personal library of frequently-used factors without committing to
-any new syntax.
+Storage: localStorage dictionary at first (per-browser, zero backend).
+Later, optional import/export of a JSON dictionary so teachers can
+distribute a standard set.
 
-## Significant figures — follow-ups
-Results are rounded to at most 3 sig figs for display, and large /
-small magnitudes switch to scientific notation. That solved the
-"too many digits" problem. Still open:
+This interacts with card labels — a stored conversion would naturally
+carry a label — and with the export story (a JSON dictionary is a
+sharable artifact).
 
-- **Minimum sig figs based on inputs.** Track the sig figs of each
-  input quantity and ensure the displayed result has at least as
-  many sig figs as the most precise input requires (while still
-  capping at the max). I.e. the current cap is a ceiling; add a
-  floor derived from the inputs.
-- Make the max sig-figs count configurable (plugin setting or
-  per-block annotation) rather than hard-coded at 3.
-- Consider a stricter teaching mode that displays exactly the min
-  sig figs of the inputs (the textbook rule for mult/div).
-
-## Expression cards — display formula on left side
-Currently expression cards (`` `4*pi*6.4^2` m^2 ``) evaluate
-immediately and show the computed number on the factor card. The
-desired behavior: the left-side (factor) card should display a
-pretty-printed version of the original expression (e.g. `4·π·6.4²`
-with Unicode operators and superscripts), preserving the student's
-reasoning. Only the final result card on the right resolves to the
-numeric value. The computed value is still used internally for the
-arithmetic — this is purely a display change on the factor cards.
-
-Pretty-printing means at minimum: `*` → `·`, `pi`/`π` → `π`,
-`^n` → Unicode superscript, parentheses preserved. More ambitious:
-render as a small fraction or sub/superscript layout. Start with
-simple Unicode substitution.
-
-## Card annotations / labels
-Any card (especially factor cards) can carry a short label or header
-describing what it represents — "speed of light", "surface area",
-"conversion factor", etc. The whole point of the plugin is making
-reasoning visible, and labels are part of that reasoning.
-
-Syntax options to consider:
-- A `# label` line immediately before the factor line, rendered as
-  a small header above the card.
-- An inline annotation after the factor, e.g. `3e8 m/s  [speed of
-  light]` with brackets parsed and rendered as a caption.
-- A YAML-style prefix: `label: speed of light` on its own line.
-
-The label should appear on the rendered card in a muted, smaller
-font — above or below the quantity — without affecting parsing.
-
-## Inline live rendering (CodeMirror 6)
-Render dimensional blocks directly in the editor, the way `$$` math
-blocks render inline in Live Preview. Implementation would be a
-`ViewPlugin` with `Decoration.widget` placed below the closing fence.
-When the cursor enters the block the widget hides and the student
-sees raw source; when the cursor leaves, the widget appears showing
-the rendered cards.
-
-This becomes more important as interactive features like card
-flipping are added: inline rendering means a student can click a
-card directly in the document to flip it, and the source edits
-happen right there. With the side-panel approach, flipping still
-works but the interaction is split across two locations.
-
-Consider keeping the side panel as an alternative view even after
-inline rendering is added — it serves a different workflow (overview
-of all blocks at once).
-
-## Card addition and subtraction
-Extend the block syntax to support additive operations between
-factor chains. Today every line is a multiplicative factor. With
-addition/subtraction, some lines would combine additively.
-
-Possible syntax: a `+` or `-` prefix on a line signals that this
-line's resolved value should be added/subtracted rather than
-multiplied.
+### Card addition and subtraction
+Extend block syntax so some lines combine additively. Today every line
+is a multiplicative factor. Possible syntax:
 
 ```
 60 mi / hr
@@ -164,54 +140,42 @@ multiplied.
 ```
 Result: 70 mi/hr.
 
-**Unit compatibility:** If units don't match after cancellation,
-show an error ("cannot add mi/hr to km — incompatible units").
-This is the pedagogically valuable part — students see *why* you
-can't just add quantities with different dimensions.
+**Unit compatibility** is the pedagogically valuable part: show an
+error ("cannot add mi/hr to km — incompatible units") when dimensions
+don't match. Students *see* why it's wrong rather than getting a
+nonsense number.
 
 Design questions:
-- Can multiplicative chains and additive operations mix in one
-  block? E.g. a multi-line product, then `+` another multi-line
-  product? Would need grouping syntax or blank-line separation.
-- Should auto-conversion be attempted when units are compatible but
-  not identical (mi/hr + km/hr)? Probably not initially — force
-  students to do the conversion explicitly.
+- Can multiplicative chains and additive operations mix in one block?
+  Probably needs grouping syntax or blank-line separation.
+- Auto-convert when units are compatible but not identical (mi/hr +
+  km/hr)? Probably not initially — make students do the conversion
+  explicitly.
 
-## Stored conversion cards / unit definitions
-Allow frequently-used conversion factors to be saved and reused by
-name, so students don't have to remember that 1 J = 1 kg·m²·s⁻².
+### Significant figures — follow-ups
+Results are rounded to at most 3 sig figs for display, and
+large/small magnitudes switch to scientific notation. Still open:
 
-Possible approaches:
-- A definitions block (`` ```dimensional-defs ``) in a note or
-  vault-level file that maps names to factor expressions. Referenced
-  in a dimensional block by name.
-- A plugin settings dictionary.
-- An editor command / slash-menu that inserts the factor text at the
-  cursor (the existing "standard conversion shortcuts" idea).
+- **Minimum sig figs based on inputs.** Track the sig figs of each
+  input quantity and ensure the displayed result has at least as many
+  as the most precise input requires (capped at the max). The current
+  3 is a ceiling; add a floor derived from the inputs.
+- Make the max sig-figs count configurable (a header flag per block, a
+  URL query param, or a settings pane).
+- A stricter teaching mode that displays exactly the min sig figs of
+  the inputs (the textbook rule for mult/div).
 
-This interacts with the card labels feature — a stored conversion
-would naturally carry a label. Also interacts with the
-editor-command approach already described in the conversion shortcuts
-section above.
+### Card labels — status
+Card annotations via a `# label` line above a factor are implemented,
+as is the trailing `# label` labeling the result card. No known
+follow-ups.
 
-## Card flipping
-Allow the student to invert a factor card in place. If a card shows
-`5 km`, flipping it produces `1 / 5 km`. If a card is already a
-fraction `1.609 km / 1 mi`, flipping swaps numerator and denominator
-to `1 mi / 1.609 km`.
-
-This is pedagogically critical: a student sets up a dimensional
-analysis chain, sees that the units don't cancel as intended, and
-flips a card to fix it — seeing the cancellations update in real
-time.
-
-Implementation considerations:
-- Clicking a rendered card (or a flip button/icon on the card) edits
-  the underlying source line, swapping numerator and denominator.
-- In the side panel, the flip click would need to locate the
-  corresponding line in the editor and edit it.
-- With inline rendering, the flip click edits the source directly
-  beneath the widget, which is a more natural interaction.
-- The flip must preserve expression-card syntax (backtick
-  expressions stay intact, just move between numerator/denominator
-  positions).
+### Card flipping — status
+Implemented: each factor card carries a ⇅ button that calls `flipLine`
+on the corresponding source line, writes the new value into the
+textarea, and runs the same persist + re-render pipeline as typing. A
+flip on a card already in a cancellation pair recomputes cancellation
+against its new neighbors correctly (cancellation is purely a function
+of the post-flip source). The flip preserves expression-card syntax —
+backtick expressions move between numerator and denominator positions
+intact.

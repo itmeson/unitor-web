@@ -1,0 +1,54 @@
+name: Deploy to GitHub Pages
+
+on:
+    push:
+        branches: ["main", "master"]
+    workflow_dispatch:
+
+# Allow a single deployment to run at a time, cancelling any in-flight
+# deploys when a new commit lands.
+concurrency:
+    group: "pages"
+    cancel-in-progress: true
+
+# GITHUB_TOKEN permissions required by the deploy-pages action.
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22.x
+                  cache: "npm"
+            - run: npm ci
+            - run: npm run build
+            - name: Stage the site
+              # Collect the static files Pages should serve. Matches the
+              # layout referenced by index.html (styles.css at the root,
+              # dist/app.js beside it).
+              run: |
+                mkdir -p _site/dist
+                cp index.html _site/
+                cp styles.css _site/
+                cp dist/app.js _site/dist/
+            - name: Upload Pages artifact
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  path: _site
+
+    deploy:
+        needs: build
+        runs-on: ubuntu-latest
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        steps:
+            - id: deployment
+              uses: actions/deploy-pages@v4

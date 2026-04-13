@@ -1,4 +1,38 @@
-/* Dimensional analysis code block rendering */
+/* Unitor — card rendering for a dimensional-analysis block.
+ *
+ * The class structure matches the Obsidian plugin exactly so the
+ * renderer ported at src/render.ts is a direct line-for-line port.
+ * Self-contained custom properties replace the Obsidian theme
+ * variables (`var(--text-normal)` etc.) the plugin used. A prefers-
+ * color-scheme: dark override gives a usable dark palette.
+ */
+
+:root {
+	--unitor-font-text: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+	--unitor-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+	--unitor-text-normal: #222;
+	--unitor-text-muted: #888;
+	--unitor-text-error: #b00020;
+	--unitor-background-primary: #ffffff;
+	--unitor-background-primary-alt: #f5f5f7;
+	--unitor-background-secondary: #f6f6f6;
+	--unitor-background-modifier-border: #dddddd;
+	--unitor-interactive-hover: #eaeaea;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--unitor-text-normal: #ececec;
+		--unitor-text-muted: #9a9a9a;
+		--unitor-text-error: #ff7a7a;
+		--unitor-background-primary: #1c1c1c;
+		--unitor-background-primary-alt: #262626;
+		--unitor-background-secondary: #242424;
+		--unitor-background-modifier-border: #3a3a3a;
+		--unitor-interactive-hover: #2d2d2d;
+	}
+}
 
 .dimensional-block {
 	padding: 0.75em 0.5em;
@@ -10,8 +44,8 @@
 	align-items: flex-end;
 	flex-wrap: wrap;
 	gap: 0.5em 0.5em;
-	font-family: var(--font-text);
-	color: var(--text-normal);
+	font-family: var(--unitor-font-text);
+	color: var(--unitor-text-normal);
 	padding-bottom: 0.5em;
 }
 
@@ -22,8 +56,8 @@
 	justify-content: center;
 	min-width: 4em;
 	padding: 0.4em 0.7em;
-	background: var(--background-primary);
-	border: 1px solid var(--background-modifier-border);
+	background: var(--unitor-background-primary);
+	border: 1px solid var(--unitor-background-modifier-border);
 	border-radius: 6px;
 }
 
@@ -38,7 +72,7 @@
 .dimensional-bar {
 	width: 100%;
 	height: 1px;
-	background: var(--text-normal);
+	background: var(--unitor-text-normal);
 	margin: 0.15em 0;
 }
 
@@ -56,8 +90,8 @@
 }
 
 /* Cancellation palette. Each pair ID maps to one of these classes via
-   `pairId % 8` so matching cancellations share a color. Colors are
-   chosen to be readable on both light and dark Obsidian themes. */
+   `pairId % 8` so matching cancellations share a color. Tuned to be
+   readable on both light and dark backgrounds. */
 .dimensional-cancelled-0 {
 	color: #c0504d;
 	text-decoration-color: #c0504d;
@@ -93,25 +127,25 @@
 
 .dimensional-op {
 	font-size: 1.2em;
-	color: var(--text-muted);
+	color: var(--unitor-text-muted);
 	padding: 0 0.1em;
 	margin-bottom: 0.7em;
 }
 
 .dimensional-result {
-	background: var(--background-primary-alt);
+	background: var(--unitor-background-primary-alt);
 }
 
 .dimensional-error {
-	color: var(--text-error);
-	font-family: var(--font-monospace);
+	color: var(--unitor-text-error);
+	font-family: var(--unitor-font-mono);
 	font-size: 0.9em;
 	padding: 0.25em 0;
 }
 
 .dimensional-label {
 	font-size: 0.75em;
-	color: var(--text-muted);
+	color: var(--unitor-text-muted);
 	text-align: center;
 	margin-bottom: 0.15em;
 	max-width: 12em;
@@ -135,10 +169,10 @@
 	height: 1.4em;
 	padding: 0;
 	margin: 0;
-	border: 1px solid var(--background-modifier-border);
+	border: 1px solid var(--unitor-background-modifier-border);
 	border-radius: 50%;
-	background: var(--background-secondary);
-	color: var(--text-muted);
+	background: var(--unitor-background-secondary);
+	color: var(--unitor-text-muted);
 	font-size: 0.9em;
 	line-height: 1;
 	cursor: pointer;
@@ -149,26 +183,12 @@
 	transition: opacity 0.15s ease;
 }
 
-.dimensional-card-wrap:hover .dimensional-flip-btn {
+.dimensional-card-wrap:hover .dimensional-flip-btn,
+.dimensional-flip-btn:focus-visible {
 	opacity: 1;
 }
 
 .dimensional-flip-btn:hover {
-	background: var(--interactive-hover);
-	color: var(--text-normal);
-}
-
-.dimensional-preview-view {
-	padding: 0.75em;
-	overflow: auto;
-}
-
-.dimensional-preview-item {
-	margin-bottom: 1em;
-}
-
-.dimensional-preview-empty {
-	color: var(--text-muted);
-	font-style: italic;
-	padding: 0.5em;
+	background: var(--unitor-interactive-hover);
+	color: var(--unitor-text-normal);
 }
