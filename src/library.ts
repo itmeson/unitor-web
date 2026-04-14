@@ -146,6 +146,32 @@ export function exportLibrary(lib: LibraryData): string {
 	return JSON.stringify(lib, null, 2);
 }
 
+/**
+ * Serialize the library for embedding in a URL query parameter.
+ * Compact (no indentation) since every extra byte lands in the URL;
+ * the caller is responsible for percent-encoding the result when it
+ * composes the final URL (URLSearchParams handles this automatically).
+ */
+export function encodeLibraryForUrl(lib: LibraryData): string {
+	return JSON.stringify(lib);
+}
+
+/**
+ * Parse a library that was embedded in a URL query parameter. Returns
+ * `null` on malformed JSON, wrong schema, or unknown version, so the
+ * caller can fall back to an empty library without crashing boot.
+ * This is deliberately non-throwing: a broken URL shouldn't brick the
+ * page, and the caller already has a good default.
+ */
+export function decodeLibraryFromUrl(raw: string): LibraryData | null {
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		return coerceLibrary(parsed);
+	} catch {
+		return null;
+	}
+}
+
 export interface ImportSummary {
 	library: LibraryData;
 	/** Entries whose (label, source) was genuinely new and got added. */

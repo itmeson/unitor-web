@@ -44,11 +44,28 @@
   file so teachers can share curated sets; Import merges an uploaded
   file, skipping duplicates by (label, source). Harness covers the
   store's add/remove/hasEntry/round-trip/import-merge behavior.
+- Teacher-shareable URLs with embedded state ("document mode"):
+  `?lib=` now carries the library JSON alongside `#source`. Share link
+  captures both. Boot picks one of two modes based on whether the URL
+  has any state (`?lib=…` or `#source`):
+  - **Document mode** (URL has state) — URL is canonical; edits update
+    the URL in place but NEVER write to localStorage. Students who
+    open a teacher link see exactly that state, and their work on an
+    assignment stays isolated from their personal library.
+  - **Personal mode** (plain URL) — today's behavior; edits update
+    both URL and localStorage so returning visitors resume where they
+    left off.
+  Mode is fixed at boot and doesn't flip mid-session. This cleanly
+  solves the accumulation problem (teacher factors never leak into
+  student localStorage) and lets teachers verify student work by
+  opening the student's shared link. Harness covers
+  `encodeLibraryForUrl` compactness and `encode → decode` round-trip
+  plus malformed-input fallbacks.
 
 ### In progress / next
-- Next feature: TBD. Likely candidates are the Clear-all +
-  Reset-to-example buttons (both small, both useful), or unit-
-  compatible card addition. Revisit once the stored-factors feature
+- Next feature: TBD. Candidates are Clear-all + Reset-to-example
+  buttons, unit-compatible card addition, or preloaded starter
+  libraries per discipline. Revisit once the teacher-workflow loop
   has some classroom use.
 
 ### Later
@@ -159,6 +176,66 @@ Follow-ups deferred:
 - A `/search` or autocomplete affordance inside the textarea for
   discoverability when the library grows large.
 - Cross-device sync / shared class libraries.
+
+### Document mode vs personal mode — status
+Persistence has two modes, decided once at boot from whether the URL
+has any state in it:
+
+- **Document mode** — URL has `#source` and/or `?lib=…`. The URL is
+  the single source of truth. Every edit (typing, flip, star, palette
+  add/delete/import) updates the URL in place via
+  `history.replaceState`; localStorage is never touched in this mode.
+  This makes teacher links deterministic: any student opening the
+  link sees exactly the teacher's captured state regardless of their
+  own Unitor history, and none of their assignment work leaks into
+  their personal library. If the student wants to save their
+  progress, they bookmark the URL or click "Copy share link".
+- **Personal mode** — URL has no state (fresh visit, plain
+  bookmark). Source and library come from localStorage; edits update
+  localStorage plus the URL (so "Copy share link" always reflects
+  current state). This is the single-user workspace pattern for
+  students/teachers working on their own between assignments.
+
+The mode is captured at boot (`documentMode` in `app.ts`) and is
+fixed for the session. The URL always updates regardless of mode;
+only the localStorage write is gated. `encodeLibraryForUrl` emits
+compact (unindented) JSON to keep URLs short enough for LMS / email
+transport; `exportLibrary` stays pretty-printed for file downloads.
+Malformed `?lib=` values fall back to an empty library rather than
+crashing the page. The hashchange listener re-syncs source on
+external address-bar edits but deliberately does not re-read
+`?lib=`, because browsers don't fire a standard event on query-only
+changes and re-reading there would surprise users by wiping
+in-session library edits.
+
+Three URL signals trigger document mode: a non-empty `#source`, a
+`?lib=…` query, and a bare `?doc` sentinel. The sentinel exists for
+the "fully empty calculator" case — a teacher who clears both source
+and library and clicks Copy share link. Without it the resulting URL
+would carry neither a meaningful hash nor a `?lib=` and would drop
+back to personal mode on reload, pulling in the student's
+localStorage instead of reproducing the empty state. `updateUrl`
+emits `?doc` only when document mode is active AND both source and
+library are empty, so personal-mode sessions never grow a sentinel
+in their URL.
+
+A small dev handle is exposed on `window.unitor` for console
+inspection: `documentMode`, `library`, and `source` are live
+getters, and `urlHasState()` is callable. Harmless and useful for
+triaging student reports about surprising state.
+
+Follow-ups deferred:
+- A "save this to my library" action for moving teacher-provided
+  factors from an assignment's session library into localStorage.
+  Today the only path is JSON export → open plain Unitor → JSON
+  import. Add this if students actually ask for it.
+- Visual indication of document mode (e.g., a subtle header badge).
+  Skipped for v1; add only if users report confusion about why their
+  edits aren't "sticking" between sessions on an assignment URL.
+- URL length mitigation (compression / short-link service) if
+  real-world libraries get too big for some LMS URL limits. Current
+  compact JSON encoding is probably enough for classroom-sized
+  libraries.
 
 ### Card addition and subtraction
 Extend block syntax so some lines combine additively. Today every line

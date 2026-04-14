@@ -23,7 +23,9 @@ import {
 import { evaluateExpression } from './expression';
 import {
 	addEntry,
+	decodeLibraryFromUrl,
 	emptyLibrary,
+	encodeLibraryForUrl,
 	exportLibrary,
 	hasEntry,
 	importLibrary,
@@ -597,6 +599,49 @@ test('library: importLibrary throws on wrong schema', () => {
 		threw = true;
 	}
 	assertEq(threw, true);
+});
+
+test('library: encodeLibraryForUrl is compact (no indentation)', () => {
+	const lib: LibraryData = addEntry(emptyLibrary(), {
+		label: 'mile to meter',
+		source: '1609 meters / 1 mile',
+	});
+	const encoded = encodeLibraryForUrl(lib);
+	// Compact means no newlines and no runs of 2+ spaces from indentation.
+	assertEq(encoded.includes('\n'), false, 'should have no newlines');
+	assertEq(encoded.includes('  '), false, 'should have no double spaces');
+	// It's still valid JSON describing the same library.
+	const parsed: unknown = JSON.parse(encoded);
+	assertEq(parsed, lib);
+});
+
+test('library: encode → decode round-trips a non-trivial library', () => {
+	const lib = addEntry(
+		addEntry(emptyLibrary(), { label: 'second to hour', source: '1 hr / 3600 s' }),
+		{ label: 'mile to meter', source: '1609 meters / 1 mile' }
+	);
+	const encoded = encodeLibraryForUrl(lib);
+	const decoded = decodeLibraryFromUrl(encoded);
+	assertEq(decoded, lib);
+});
+
+test('library: decodeLibraryFromUrl returns null on malformed JSON', () => {
+	assertEq(decodeLibraryFromUrl('{not json'), null);
+	// Valid JSON but wrong shape.
+	assertEq(decodeLibraryFromUrl('[1,2,3]'), null);
+	// Missing version.
+	assertEq(decodeLibraryFromUrl('{"entries":[]}'), null);
+	// Unknown version.
+	assertEq(decodeLibraryFromUrl('{"version":99,"entries":[]}'), null);
+	// Empty string — JSON.parse throws, caller gets null.
+	assertEq(decodeLibraryFromUrl(''), null);
+});
+
+test('library: decodeLibraryFromUrl accepts an empty library', () => {
+	const empty = emptyLibrary();
+	const encoded = encodeLibraryForUrl(empty);
+	const decoded = decodeLibraryFromUrl(encoded);
+	assertEq(decoded, empty);
 });
 
 // ---------- expression evaluator ----------

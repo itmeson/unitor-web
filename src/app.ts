@@ -1,46 +1,45 @@
 /**
  * Unitor web-app entry point.
  *
- * The pipeline is:
+ * Two persistence modes, decided once at boot by looking at the
+ * incoming URL:
  *
- *   textarea input
- *     → localStorage.setItem(STORAGE_KEY, source)       (persist)
- *     → history.replaceState(..., "#<encoded source>")  (permalink)
- *     → renderDocument(source, preview)                 (render)
+ *  - **Document mode**: the URL is non-empty — a `#source` fragment,
+ *    a `?lib=…` query, or both. The URL is the canonical state, and
+ *    all subsequent edits update the URL in place via
+ *    `history.replaceState`. localStorage is deliberately NOT
+ *    touched in this mode. This is what makes teacher-shared links
+ *    deterministic: every student who opens the link sees exactly
+ *    the state the teacher captured, regardless of their own prior
+ *    Unitor history, and nothing they do here leaks into their
+ *    personal localStorage library.
  *
- * On load, the initial source is chosen in this priority order:
- *   1. URL hash (so a shared link always wins)
- *   2. localStorage (returning visitors restore their last session)
- *   3. a small default block
+ *  - **Personal mode**: the URL has no state (plain bookmark, no
+ *    query, no hash). Source comes from the localStorage draft and
+ *    library comes from the localStorage-backed store. Edits update
+ *    both the URL (so "Copy share link" is accurate at any moment)
+ *    and localStorage (so returning visitors resume where they left
+ *    off). This is the single-user workspace pattern.
  *
- * The "Copy share link" button copies location.href (which always
- * reflects the current source thanks to the live hash update) to the
- * clipboard with a brief "Copied!" flash. If the clipboard API isn't
- * available (insecure context, old browser), the button shows a
- * fallback message — the URL is already in the address bar either way.
+ * In both modes the URL always reflects the current state, so the
+ * "Copy share link" button does the same thing either way: shares
+ * the current source+library together.
  *
- * A hashchange listener keeps the textarea+preview in sync when the
- * hash is mutated *externally* (user edits the address bar, another
- * tab navigates here, back/forward button). Our own history.replaceState
- * does NOT fire hashchange, so no guard against self-triggered events
- * is needed.
+ * On boot, the initial source is chosen in this priority order:
+ *   1. URL hash (any teacher-shared or self-shared link)          — document mode
+ *   2. `?lib=` present but no hash                                — document mode, empty source
+ *   3. localStorage draft (returning personal visitor)            — personal mode
+ *   4. a small default block (first-ever visit)                   — personal mode
  *
- * Clicking a factor's flip button rewrites its source line in-place via
- * `flipLine` and then runs the same pipeline as typing, so flips are
- * reflected in the textarea, localStorage, URL hash, and preview.
+ * The library follows the same priority: `?lib=` wins if present,
+ * otherwise localStorage, otherwise empty.
  *
- * Clicking a card's copy button (⧉) inserts the card's source at the
- * textarea cursor. The render module pre-builds the snippet (including
- * any `#label` line), so the app layer only has to splice it into the
- * textarea on its own line and then run the same persist pipeline as
- * typing. Copy buttons on result cards synthesize a factor line from
- * the rounded value and residual units.
- *
- * Clicking a factor card's star button (☆/★) toggles a library entry
- * for that card. Unlabeled cards trigger a prompt for a label before
- * saving. The library lives in localStorage via `src/library.ts`; the
- * side palette (`src/palette.ts`) renders it and surfaces add/insert/
- * delete/import/export controls.
+ * Clicking a factor's flip button rewrites its source line in-place
+ * via `flipLine` and then runs the same pipeline as typing. Clicking
+ * a card's copy button inserts the card's source at the textarea
+ * cursor. Clicking a card's star button toggles the factor in the
+ * library. All of these end by calling `persistState()`, which
+ * writes to the URL and (in personal mode only) localStorage.
  */
 
 import { renderDocument, RenderCallbacks } from './render';
@@ -48,7 +47,9 @@ import { flipLine } from './parser';
 import {
 	LibraryData,
 	addEntry,
+	decodeLibraryFromUrl,
 	emptyLibrary,
+	encodeLibraryForUrl,
 	exportLibrary,
 	hasEntry,
 	importLibrary,
@@ -59,7 +60,7 @@ import {
 } from './library';
 import { PaletteCallbacks, renderPalette } from './palette';
 
-const STORAGE_KEY = 'unitor:block';
+const SOURCE_STORAGE_KEY = 'unitor:block';
 const PANEL_OPEN_KEY = 'unitor:library-open';
 const FLASH_DURATION_MS = 1500;
 
@@ -88,18 +89,51 @@ function decodeHash(): string | null {
 	}
 }
 
+/**
+ * Read the library embedded in the current URL, if any. `null` means
+ * no `?lib=` param was supplied; an empty library means the param was
+ * present but malformed (we swallow the error so a corrupt URL can't
+ * brick the page).
+ */
+function decodeLibraryFromQuery(): LibraryData | null {
+	const params = new URLSearchParams(location.search);
+	const raw = params.get('lib');
+	if (raw === null) return null;
+	return decodeLibraryFromUrl(raw) ?? emptyLibrary();
+}
+
+/**
+ * Does the URL carry any state? This is the sole signal that picks
+ * document mode over personal mode, and it's fixed at boot time —
+ * mode doesn't flip mid-session even as the URL updates in place.
+ *
+ * Three signals can trigger document mode:
+ *  - a non-empty `#source` fragment (length > 1 because a bare `#` is
+ *    often stripped by browsers during copy/paste and is unreliable);
+ *  - a `?lib=…` query with an embedded library;
+ *  - a `?doc` sentinel — used when a teacher captures an intentionally
+ *    empty calculator (no source, no library) and needs the shared
+ *    URL to stay document-mode on reload, not fall back to the
+ *    student's localStorage.
+ */
+function urlHasState(): boolean {
+	if (location.hash.length > 1) return true;
+	const params = new URLSearchParams(location.search);
+	return params.has('lib') || params.has('doc');
+}
+
 /** Read from localStorage, tolerating private-mode restrictions that can throw. */
-function readStorage(): string | null {
+function readSourceStorage(): string | null {
 	try {
-		return localStorage.getItem(STORAGE_KEY);
+		return localStorage.getItem(SOURCE_STORAGE_KEY);
 	} catch {
 		return null;
 	}
 }
 
-function writeStorage(source: string): void {
+function writeSourceStorage(source: string): void {
 	try {
-		localStorage.setItem(STORAGE_KEY, source);
+		localStorage.setItem(SOURCE_STORAGE_KEY, source);
 	} catch {
 		// Private mode, quota exceeded, or disabled storage — non-fatal.
 	}
@@ -122,30 +156,77 @@ function writePanelOpen(open: boolean): void {
 	}
 }
 
-function loadInitialSource(): string {
-	// URL hash wins over localStorage so shared links override the saved session.
-	const fromHash = decodeHash();
-	if (fromHash !== null) return fromHash;
-	const stored = readStorage();
-	if (stored !== null) return stored;
-	return DEFAULT_BLOCK;
+interface InitialState {
+	source: string;
+	library: LibraryData;
+	/** True if state was loaded from the URL → document mode. */
+	fromUrl: boolean;
+}
+
+function loadInitialState(): InitialState {
+	if (urlHasState()) {
+		// Document mode. Missing hash means "start with empty source" —
+		// a teacher who set up a library-only link expects students to
+		// start from a blank textarea, not the default demo block.
+		return {
+			source: decodeHash() ?? '',
+			library: decodeLibraryFromQuery() ?? emptyLibrary(),
+			fromUrl: true,
+		};
+	}
+	// Personal mode. Fall back through localStorage to the default demo.
+	const stored = readSourceStorage();
+	return {
+		source: stored ?? DEFAULT_BLOCK,
+		library: loadLibrary(),
+		fromUrl: false,
+	};
 }
 
 /**
- * Replace the current URL hash with the encoded source, without
- * pushing a new history entry. Swallows errors from exotic hosts (some
- * browsers throw on certain `about:`/`file:` URLs) and from sources
- * too long for the browser's URL limit; a failed hash write is
- * non-fatal because localStorage still holds the source.
+ * Replace the current URL with one encoding the given source and
+ * library. Always called regardless of mode so "Copy share link"
+ * reflects current state. The query param is omitted entirely when
+ * the library is empty, so a blank personal-mode session doesn't
+ * carry a dangling `?lib=%7B…%7D` in the address bar.
+ *
+ * `documentMode` matters only for the edge case of a fully empty
+ * document — no source AND no library. Without a signal the reload
+ * would drop back to personal mode and pull in the student's
+ * localStorage, ruining the "empty calculator" assignment. In that
+ * case only, we emit a `?doc` sentinel so the URL stays document-
+ * mode. Personal-mode sessions with empty content (e.g. a first
+ * visit before the default block has been typed into) get a clean
+ * URL without the sentinel.
+ *
+ * Swallows errors from exotic hosts or over-long URLs: a failed URL
+ * write is non-fatal because personal mode still has localStorage and
+ * document mode still has in-memory state for the tab's lifetime.
  */
-function updateUrlHash(source: string): void {
-	const encoded = encodeURIComponent(source);
-	const newHash = '#' + encoded;
-	if (location.hash === newHash) return;
+function updateUrl(
+	source: string,
+	library: LibraryData,
+	documentMode: boolean
+): void {
+	const libPresent = library.entries.length > 0;
+	const sourcePresent = source.length > 0;
+	const needsSentinel = documentMode && !libPresent && !sourcePresent;
+
+	const params = new URLSearchParams();
+	if (libPresent) params.set('lib', encodeLibraryForUrl(library));
+	if (needsSentinel) params.set('doc', '');
+
+	let target = location.pathname;
+	const qs = params.toString();
+	if (qs.length > 0) target += '?' + qs;
+	target += '#' + encodeURIComponent(source);
+
+	const current = location.pathname + location.search + location.hash;
+	if (current === target) return;
 	try {
-		history.replaceState(null, '', newHash);
+		history.replaceState(null, '', target);
 	} catch {
-		// ignore — the source is still persisted in localStorage
+		// ignore — in-memory state and (personal mode) localStorage survive
 	}
 }
 
@@ -204,15 +285,28 @@ function boot(): void {
 	const workspace = document.querySelector('main.workspace') as HTMLElement;
 	const fileInput = $('library-file-input') as HTMLInputElement;
 
+	const initial = loadInitialState();
 	// In-memory mirror of the library. All mutations produce a new value
 	// (`addEntry`/`removeEntry` are pure), which we then persist and
-	// re-render. We treat the library as non-fatal: if loading throws,
-	// we start empty.
-	let library: LibraryData;
-	try {
-		library = loadLibrary();
-	} catch {
-		library = emptyLibrary();
+	// re-render.
+	let library: LibraryData = initial.library;
+	// `fromUrl` is captured at boot and does NOT change even as the URL
+	// updates in place. This keeps the persistence rule stable for the
+	// session: document-mode sessions never write to localStorage,
+	// personal-mode sessions always do.
+	const documentMode = initial.fromUrl;
+
+	/**
+	 * Single write-through step. Always updates the URL so "Copy share
+	 * link" is accurate at any moment; updates localStorage only in
+	 * personal mode so document-mode sessions stay leak-free.
+	 */
+	function persistState(): void {
+		updateUrl(textarea.value, library, documentMode);
+		if (!documentMode) {
+			writeSourceStorage(textarea.value);
+			saveLibrary(library);
+		}
 	}
 
 	/**
@@ -239,8 +333,7 @@ function boot(): void {
 		textarea.value = updated;
 		textarea.focus();
 		textarea.setSelectionRange(newCursor, newCursor);
-		writeStorage(updated);
-		updateUrlHash(updated);
+		persistState();
 		render(updated);
 	}
 
@@ -265,16 +358,15 @@ function boot(): void {
 
 	/** Persist + re-render both panes after any library mutation. */
 	function afterLibraryChange(): void {
-		saveLibrary(library);
+		persistState();
 		rerenderPalette();
-		// The preview's star glyphs depend on library membership, so
-		// re-render it too.
+		// The preview's star glyphs depend on library membership.
 		render(textarea.value);
 	}
 
 	// Flipping a factor rewrites the corresponding source line in the
-	// textarea, then runs the full input pipeline (persist, update hash,
-	// re-render) so the flipped state becomes the new shared state. The
+	// textarea, then runs the full input pipeline (persist, re-render)
+	// so the flipped state becomes the new shared state. The
 	// `sourceLine` index is 0-based within the block (matches the parser's
 	// 0-based line numbers).
 	function handleFlip(sourceLine: number): void {
@@ -284,8 +376,7 @@ function boot(): void {
 		lines[sourceLine] = flipLine(original);
 		const updated = lines.join('\n');
 		textarea.value = updated;
-		writeStorage(updated);
-		updateUrlHash(updated);
+		persistState();
 		render(updated);
 	}
 
@@ -376,6 +467,8 @@ function boot(): void {
 	// Library panel visibility. We toggle a class on the workspace grid
 	// so CSS can widen to three columns; we also track the state in
 	// localStorage so the panel's "open" choice survives reloads.
+	// (Panel-open state is a UI preference, not document state, so it
+	// persists regardless of mode.)
 	function setPanelOpen(open: boolean): void {
 		workspace.classList.toggle('library-open', open);
 		libraryPanel.hidden = !open;
@@ -389,21 +482,17 @@ function boot(): void {
 		setPanelOpen(next);
 	});
 
-	const initial = loadInitialSource();
-	textarea.value = initial;
-	render(initial);
+	textarea.value = initial.source;
+	render(initial.source);
 	rerenderPalette();
 	setPanelOpen(readPanelOpen());
-	// Normalize the hash on load: if we arrived without one (or with a
-	// malformed one) we set it so refreshing round-trips; if we arrived
-	// with a valid hash already, updateUrlHash bails out early.
-	updateUrlHash(initial);
+	// Normalize the URL on load. If we arrived with partial state, the
+	// URL will now reflect the full resolved state.
+	persistState();
 
 	textarea.addEventListener('input', () => {
-		const source = textarea.value;
-		writeStorage(source);
-		updateUrlHash(source);
-		render(source);
+		persistState();
+		render(textarea.value);
 	});
 
 	shareBtn.addEventListener('click', () => {
@@ -412,18 +501,37 @@ function boot(): void {
 
 	// External hash changes (address-bar edits, back/forward, paste-and-go
 	// in the same tab). history.replaceState does not trigger hashchange
-	// so this only fires for genuinely external edits.
+	// so this only fires for genuinely external edits. We re-sync the
+	// textarea and preview to the new hash; we don't touch localStorage,
+	// matching document-mode semantics even in personal mode (an external
+	// paste isn't an edit the user wants saved to their draft).
+	//
+	// We intentionally do NOT re-read `?lib=` here: hashchange doesn't
+	// fire on query-only changes, and a teacher link opened in a fresh
+	// tab goes through boot() which handles both. Mixing the two would
+	// surprise users by blowing away in-session library mutations when
+	// they tweak the hash externally.
 	window.addEventListener('hashchange', () => {
 		const source = decodeHash();
 		if (source === null) return;
 		if (source === textarea.value) return;
 		textarea.value = source;
 		render(source);
-		// Intentionally NOT writing to localStorage here: if the user
-		// navigated to a shared link without editing, we don't want to
-		// clobber their saved session. The first keystroke they make
-		// will persist normally.
 	});
+
+	// Dev handle: live getters for the runtime state so you can inspect
+	// `unitor.documentMode`, `unitor.library`, etc. from the browser
+	// console without setting breakpoints. Each property reads the
+	// current closure variable on access, so it stays accurate as the
+	// user types / saves / imports. Cheap, harmless (no server, no
+	// privileged actions), and useful for diagnosing teacher/student
+	// reports like "the wrong library loaded".
+	(window as unknown as { unitor: unknown }).unitor = {
+		get documentMode() { return documentMode; },
+		get library() { return library; },
+		get source() { return textarea.value; },
+		urlHasState,
+	};
 }
 
 if (document.readyState === 'loading') {
