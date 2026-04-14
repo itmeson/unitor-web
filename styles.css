@@ -179,16 +179,25 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	opacity: 0;
-	transition: opacity 0.15s ease;
+	/* Always visible at low opacity so the flip affordance is discoverable,
+	   then lifted to full opacity + enlarged on card-wrap hover, and
+	   emphasized further when the user hovers or focuses the button
+	   itself. */
+	opacity: 0.35;
+	transform: scale(1);
+	transition: opacity 0.15s ease, transform 0.15s ease,
+		background 0.15s ease, color 0.15s ease;
 }
 
 .dimensional-card-wrap:hover .dimensional-flip-btn,
 .dimensional-flip-btn:focus-visible {
 	opacity: 1;
+	transform: scale(1.1);
 }
 
 .dimensional-flip-btn:hover {
+	opacity: 1;
+	transform: scale(1.2);
 	background: var(--unitor-interactive-hover);
 	color: var(--unitor-text-normal);
 }
