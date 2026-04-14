@@ -210,3 +210,44 @@
 	background: var(--unitor-interactive-hover);
 	color: var(--unitor-text-normal);
 }
+
+/* Copy-this-card button. Visually parallel to the flip button but
+   positioned on the bottom-left of a card so the two affordances don't
+   stack on top of one another. Clicking inserts the card's source at
+   the textarea cursor; see `src/app.ts`'s `handleCopy`. */
+.dimensional-copy-btn {
+	position: absolute;
+	bottom: -0.6em;
+	left: -0.4em;
+	width: 1.4em;
+	height: 1.4em;
+	padding: 0;
+	margin: 0;
+	border: 1px solid var(--unitor-background-modifier-border);
+	border-radius: 50%;
+	background: var(--unitor-background-secondary);
+	color: var(--unitor-text-muted);
+	font-size: 0.9em;
+	line-height: 1;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	opacity: 0.35;
+	transform: scale(1);
+	transition: opacity 0.15s ease, transform 0.15s ease,
+		background 0.15s ease, color 0.15s ease;
+}
+
+.dimensional-card-wrap:hover .dimensional-copy-btn,
+.dimensional-copy-btn:focus-visible {
+	opacity: 1;
+	transform: scale(1.1);
+}
+
+.dimensional-copy-btn:hover {
+	opacity: 1;
+	transform: scale(1.2);
+	background: var(--unitor-interactive-hover);
+	color: var(--unitor-text-normal);
+}

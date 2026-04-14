@@ -13,7 +13,13 @@
 
 import { parseBlock, parseDocument, flipLine, UnitTerm } from './parser';
 import { compute } from './compute';
-import { formatResultValue, prettyPrintExpression } from './format';
+import {
+	formatResultValue,
+	prettyPrintExpression,
+	serializeResultAsFactorLine,
+	serializeResultValue,
+	serializeUnits,
+} from './format';
 import { evaluateExpression } from './expression';
 
 interface Case {
@@ -305,6 +311,133 @@ test('formatResultValue: small magnitude → scientific', () => {
 test('prettyPrintExpression: pi, exponents, multiplication', () => {
 	assertEq(prettyPrintExpression('4*pi*6.4^2'), '4·π·6.4²');
 	assertEq(prettyPrintExpression('(3*10^8)^2'), '(3 × 10⁸)²');
+});
+
+// ---------- copy-card serializers ----------
+
+test('serializeResultValue: comfortable range → plain decimal', () => {
+	assertEq(serializeResultValue(0.001389), '0.00139');
+	assertEq(serializeResultValue(13.4083), '13.4');
+	assertEq(serializeResultValue(9.8), '9.8');
+});
+
+test('serializeResultValue: large/small → parseable scientific', () => {
+	// Uses `*10^` instead of Unicode superscript so the emitted text
+	// round-trips through parseBlock.
+	assertEq(serializeResultValue(3e8), '3*10^8');
+	assertEq(serializeResultValue(6.022e23), '6.02*10^23');
+	assertEq(serializeResultValue(9.11e-31), '9.11*10^-31');
+});
+
+test('serializeResultValue: 0 and NaN', () => {
+	assertEq(serializeResultValue(0), '0');
+	assertEq(serializeResultValue(NaN), 'NaN');
+});
+
+test('serializeUnits: positives only', () => {
+	assertEq(serializeUnits([{ symbol: 'kg', exponent: 1 }]), 'kg');
+	assertEq(
+		serializeUnits([
+			{ symbol: 'kg', exponent: 1 },
+			{ symbol: 'm', exponent: 2 },
+		]),
+		'kg*m^2'
+	);
+});
+
+test('serializeUnits: mixed positives and negatives → top/bottom form', () => {
+	assertEq(
+		serializeUnits([
+			{ symbol: 'kg', exponent: 1 },
+			{ symbol: 'm', exponent: 1 },
+			{ symbol: 's', exponent: -2 },
+		]),
+		'kg*m/s^2'
+	);
+	assertEq(
+		serializeUnits([
+			{ symbol: 'm', exponent: 1 },
+			{ symbol: 's', exponent: -1 },
+		]),
+		'm/s'
+	);
+});
+
+test('serializeUnits: negatives only → signed exponents', () => {
+	// A bare leading `/` is not a valid unit expression, so fall back
+	// to signed exponents in this case.
+	assertEq(serializeUnits([{ symbol: 's', exponent: -1 }]), 's^-1');
+	assertEq(
+		serializeUnits([
+			{ symbol: 'Hz', exponent: -2 },
+		]),
+		'Hz^-2'
+	);
+});
+
+test('serializeUnits: dimensionless → empty string', () => {
+	assertEq(serializeUnits([]), '');
+});
+
+test('serializeResultAsFactorLine: value + units composed with a space', () => {
+	assertEq(
+		serializeResultAsFactorLine(13.4083, [
+			{ symbol: 'm', exponent: 1 },
+			{ symbol: 's', exponent: -1 },
+		]),
+		'13.4 m/s'
+	);
+	// Dimensionless result: no unit portion.
+	assertEq(serializeResultAsFactorLine(0.5, []), '0.5');
+});
+
+test('copy snippet round-trips through parseBlock', () => {
+	// Build a realistic snippet the copy button would insert, then parse
+	// it to confirm the factor's value and residual units match the
+	// original result. This is the end-to-end guarantee that copying a
+	// result card and pasting it in as a factor behaves correctly.
+	const snippet = serializeResultAsFactorLine(13.4083, [
+		{ symbol: 'm', exponent: 1 },
+		{ symbol: 's', exponent: -1 },
+	]);
+	const parsed = parseBlock(snippet);
+	assertEq(parsed.errors.length, 0);
+	assertEq(parsed.factors.length, 1);
+	const f = parsed.factors[0]!;
+	assertClose(f.numerator.value, 13.4);
+	assertEq(f.numerator.units as UnitTerm[], [
+		{ symbol: 'm', exponent: 1 },
+		{ symbol: 's', exponent: -1 },
+	]);
+});
+
+test('copy snippet round-trip: scientific-notation result', () => {
+	const snippet = serializeResultAsFactorLine(3e8, [
+		{ symbol: 'm', exponent: 1 },
+		{ symbol: 's', exponent: -1 },
+	]);
+	// "3*10^8 m/s" — the `*10^` form is what the parser expects.
+	assertEq(snippet, '3*10^8 m/s');
+	const parsed = parseBlock(snippet);
+	assertEq(parsed.errors.length, 0);
+	assertEq(parsed.factors.length, 1);
+	assertClose(parsed.factors[0]!.numerator.value, 3e8);
+});
+
+test('copy snippet round-trip: negatives-only result', () => {
+	// 60 Hz as 1/s → factor line "60 s^-1"
+	const snippet = serializeResultAsFactorLine(60, [
+		{ symbol: 's', exponent: -1 },
+	]);
+	assertEq(snippet, '60 s^-1');
+	const parsed = parseBlock(snippet);
+	assertEq(parsed.errors.length, 0);
+	assertEq(parsed.factors.length, 1);
+	const f = parsed.factors[0]!;
+	assertClose(f.numerator.value, 60);
+	assertEq(f.numerator.units as UnitTerm[], [
+		{ symbol: 's', exponent: -1 },
+	]);
 });
 
 // ---------- expression evaluator ----------

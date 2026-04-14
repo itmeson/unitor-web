@@ -21,17 +21,26 @@
 - Card flipping: each factor card has a ⇅ button that rewrites its
   source line via `flipLine`, updates the textarea, and runs the full
   persist + re-render pipeline
+- Multi-block document model: `---` lines or 2+ consecutive blank
+  lines split the textarea into independent blocks, rendered with a
+  thin horizontal separator. Flip buttons continue to work across
+  blocks thanks to absolute source-line indices. Harness covers the
+  split rules.
+- Copy-card affordance: each factor card and the result card carries a
+  ⧉ button that inserts the card's source at the textarea cursor, on
+  its own line, preserving any `#label` line. Result cards synthesize
+  a factor line from the rounded value + residual units, using a
+  parseable scientific form (`3*10^8 m/s`) so the inserted text
+  round-trips through `parseBlock`.
 - Repo cleanup: deleted `src/_legacy/` and the Obsidian release
   artifacts (`manifest.json`, `version-bump.mjs`, `versions.json`);
   dropped their entries from `tsconfig.json` and `eslint.config.mts`
 
 ### In progress / next
-- Multi-block document model shipped: `---` lines or 2+ blank lines
-  split the textarea into independent blocks, rendered with a thin
-  separator. Flip buttons continue to work across blocks via absolute
-  source-line indices. Harness covers the split rules.
-- "Copy card" affordance so students can pull frequently-used factors
-  into a new block (see *Stored conversion cards* below)
+- Next feature: stored / curated conversion factors (see *Stored
+  conversion cards* below). Copy-card covers the in-document reuse
+  case; this covers the cross-session "here's our class's standard
+  factor library" case.
 
 ### Later
 - **Clear-all button.** Wipe the textarea, the URL hash, and the
@@ -178,6 +187,32 @@ large/small magnitudes switch to scientific notation. Still open:
 Card annotations via a `# label` line above a factor are implemented,
 as is the trailing `# label` labeling the result card. No known
 follow-ups.
+
+### Card copying — status
+Implemented: each factor card and the result card carries a ⧉ button
+at the bottom-left corner (the flip button ⇅ sits at the bottom-right).
+Clicking inserts the card's source at the textarea cursor, on its own
+line — the handler in `app.ts` auto-adds leading/trailing newlines
+when the cursor is mid-line so the snippet never glues onto an
+adjacent line, then runs the same persist + re-render pipeline as
+typing.
+
+Snippet shape:
+- Factor card: the original source line, preceded by a `#label` line
+  if one was present above it.
+- Result card: a synthesized factor line `value units`, preceded by
+  the block's `resultLabel` if set. The value is rounded to 3 sig
+  figs and rendered as a plain decimal in the comfortable range, as
+  `mantissa*10^exp` (not the Unicode `× 10ⁿ` display form) outside
+  it, and negatives-only unit expressions fall back to signed
+  exponents (`60 s^-1`) because a bare leading `/` is not a valid
+  unit expression.
+
+Serializers live in `src/format.ts` (`serializeResultValue`,
+`serializeUnits`, `serializeResultAsFactorLine`). Harness covers
+rounding, the three magnitude ranges, each unit-exponent shape, and
+end-to-end round-trip through `parseBlock` for three representative
+result shapes.
 
 ### Card flipping — status
 Implemented: each factor card carries a ⇅ button that calls `flipLine`

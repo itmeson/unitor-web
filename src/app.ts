@@ -28,6 +28,13 @@
  * Clicking a factor's flip button rewrites its source line in-place via
  * `flipLine` and then runs the same pipeline as typing, so flips are
  * reflected in the textarea, localStorage, URL hash, and preview.
+ *
+ * Clicking a card's copy button (⧉) inserts the card's source at the
+ * textarea cursor. The render module pre-builds the snippet (including
+ * any `#label` line), so the app layer only has to splice it into the
+ * textarea on its own line and then run the same persist pipeline as
+ * typing. Copy buttons on result cards synthesize a factor line from
+ * the rounded value and residual units.
  */
 
 import { renderDocument } from './render';
@@ -139,10 +146,10 @@ function boot(): void {
 	const preview = $('preview');
 	const shareBtn = $('share-link') as HTMLButtonElement;
 
-	// Re-render with the flip callback wired in, so every render produces
-	// interactive flip buttons.
+	// Re-render with the flip and copy callbacks wired in, so every
+	// render produces interactive flip and copy buttons.
 	function render(source: string): void {
-		renderDocument(source, preview, handleFlip);
+		renderDocument(source, preview, handleFlip, handleCopy);
 	}
 
 	// Flipping a factor rewrites the corresponding source line in the
@@ -157,6 +164,38 @@ function boot(): void {
 		lines[sourceLine] = flipLine(original);
 		const updated = lines.join('\n');
 		textarea.value = updated;
+		writeStorage(updated);
+		updateUrlHash(updated);
+		render(updated);
+	}
+
+	/**
+	 * Insert a card's source snippet at the textarea cursor, ensuring it
+	 * lands on its own line. We add a leading newline if there is
+	 * non-newline content immediately before the cursor, and a trailing
+	 * newline if non-newline content follows, so the snippet never glues
+	 * onto an adjacent line. Any existing selection is replaced. After
+	 * insertion the cursor sits at the end of the inserted snippet.
+	 */
+	function handleCopy(snippet: string): void {
+		const value = textarea.value;
+		const start = textarea.selectionStart;
+		const end = textarea.selectionEnd;
+		const before = value.slice(0, start);
+		const after = value.slice(end);
+
+		const needsNewlineBefore = before.length > 0 && !before.endsWith('\n');
+		const needsNewlineAfter = after.length > 0 && !after.startsWith('\n');
+		const prefix = needsNewlineBefore ? '\n' : '';
+		const suffix = needsNewlineAfter ? '\n' : '';
+		const toInsert = prefix + snippet + suffix;
+
+		const updated = before + toInsert + after;
+		const newCursor = start + prefix.length + snippet.length;
+
+		textarea.value = updated;
+		textarea.focus();
+		textarea.setSelectionRange(newCursor, newCursor);
 		writeStorage(updated);
 		updateUrlHash(updated);
 		render(updated);

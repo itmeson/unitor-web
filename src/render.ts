@@ -19,13 +19,71 @@
 
 import { parseBlock, parseDocument, ParseResult, UnitTerm } from './parser';
 import { compute, AnnotatedUnitTerm, AnnotatedQuantity } from './compute';
-import { formatResultValue, superscript } from './format';
+import {
+	formatResultValue,
+	serializeResultAsFactorLine,
+	superscript,
+} from './format';
 
 /** Size of the cancellation color palette defined in `styles.css`. */
 const CANCEL_PALETTE_SIZE = 8;
 
 /** Callback to flip a factor card; receives the 0-based line within the block. */
 export type OnFlipCallback = (sourceLine: number) => void;
+
+/**
+ * Callback to copy a card's source into the document. Receives the
+ * ready-to-insert source snippet (one or two lines: an optional `#
+ * label` line followed by a factor line). The app layer handles where
+ * to splice it.
+ */
+export type OnCopyCallback = (snippet: string) => void;
+
+/** Build the snippet inserted when a factor card's copy button is clicked. */
+function factorSnippet(rawLine: string, label: string | undefined): string {
+	const factorLine = rawLine.trim();
+	if (label) return `#${label}\n${factorLine}`;
+	return factorLine;
+}
+
+/** Build the snippet inserted when a result card's copy button is clicked. */
+function resultSnippet(
+	value: number,
+	residualUnits: UnitTerm[],
+	resultLabel: string | undefined
+): string {
+	const factorLine = serializeResultAsFactorLine(value, residualUnits);
+	if (resultLabel) return `#${resultLabel}\n${factorLine}`;
+	return factorLine;
+}
+
+/**
+ * Attach a small "copy this card" button to a card wrapper. Styled
+ * identically to the flip button but positioned on the left.
+ */
+function attachCopyButton(
+	cardWrap: HTMLElement,
+	snippet: string,
+	onCopy: OnCopyCallback
+): void {
+	const btn = document.createElement('button');
+	btn.className = 'dimensional-copy-btn';
+	btn.textContent = '⧉';
+	btn.setAttribute('aria-label', 'Copy this card into the document');
+	btn.setAttribute('title', 'Copy to cursor');
+	btn.setAttribute('type', 'button');
+	// Don't steal focus from the textarea so the cursor stays where the
+	// user last placed it — that's where the copy lands.
+	btn.addEventListener('mousedown', (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+	});
+	btn.addEventListener('click', (e) => {
+		e.stopPropagation();
+		onCopy(snippet);
+	});
+	cardWrap.appendChild(btn);
+}
 
 interface ElOpts {
 	className?: string;
@@ -196,7 +254,8 @@ function renderResidualTerms(parent: Element, terms: UnitTerm[]): void {
 function appendParsedBlock(
 	parsed: ParseResult,
 	host: HTMLElement,
-	onFlip?: OnFlipCallback
+	onFlip?: OnFlipCallback,
+	onCopy?: OnCopyCallback
 ): void {
 	const { factors, errors, resultLabel } = parsed;
 	const container = child(host, 'div', { className: 'dimensional-block' });
@@ -237,6 +296,9 @@ function appendParsedBlock(
 					onFlip(line);
 				});
 			}
+			if (onCopy) {
+				attachCopyButton(cardWrap, factorSnippet(f.raw, f.label), onCopy);
+			}
 		});
 
 		child(row, 'div', { className: 'dimensional-op', text: '=' });
@@ -266,6 +328,14 @@ function appendParsedBlock(
 			const resultBot = child(resultCard, 'div', { className: 'dimensional-cell' });
 			renderResidualTerms(resultBot, negRes);
 		}
+
+		if (onCopy) {
+			attachCopyButton(
+				resultWrap,
+				resultSnippet(value, residualUnits, resultLabel),
+				onCopy
+			);
+		}
 	}
 
 	for (const err of errors) {
@@ -282,14 +352,19 @@ function appendParsedBlock(
  *
  * When `onFlip` is provided, each factor card gets a small flip button
  * (⇅) that invokes the callback with the factor's 0-based source line.
+ * When `onCopy` is provided, each factor card and the result card get
+ * a small "duplicate" button (⧉) that invokes the callback with a
+ * ready-to-insert source snippet (label line, if any, then factor
+ * line).
  */
 export function renderDimensionalBlock(
 	source: string,
 	host: HTMLElement,
-	onFlip?: OnFlipCallback
+	onFlip?: OnFlipCallback,
+	onCopy?: OnCopyCallback
 ): void {
 	host.textContent = '';
-	appendParsedBlock(parseBlock(source), host, onFlip);
+	appendParsedBlock(parseBlock(source), host, onFlip, onCopy);
 }
 
 /**
@@ -304,12 +379,14 @@ export function renderDimensionalBlock(
  *
  * Flip callbacks use source-line indices that are absolute within the
  * full document, so `src/app.ts`'s flip handler can splice the correct
- * textarea line regardless of which block the factor belongs to.
+ * textarea line regardless of which block the factor belongs to. Copy
+ * callbacks just receive the pre-built source snippet to insert.
  */
 export function renderDocument(
 	source: string,
 	host: HTMLElement,
-	onFlip?: OnFlipCallback
+	onFlip?: OnFlipCallback,
+	onCopy?: OnCopyCallback
 ): void {
 	host.textContent = '';
 	const blocks = parseDocument(source);
@@ -317,6 +394,6 @@ export function renderDocument(
 		if (i > 0) {
 			child(host, 'hr', { className: 'dimensional-block-separator' });
 		}
-		appendParsedBlock(block, host, onFlip);
+		appendParsedBlock(block, host, onFlip, onCopy);
 	});
 }
