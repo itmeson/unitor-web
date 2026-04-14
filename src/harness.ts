@@ -21,6 +21,16 @@ import {
 	serializeUnits,
 } from './format';
 import { evaluateExpression } from './expression';
+import {
+	addEntry,
+	emptyLibrary,
+	exportLibrary,
+	hasEntry,
+	importLibrary,
+	removeEntry,
+	removeMatching,
+	LibraryData,
+} from './library';
 
 interface Case {
 	name: string;
@@ -438,6 +448,155 @@ test('copy snippet round-trip: negatives-only result', () => {
 	assertEq(f.numerator.units as UnitTerm[], [
 		{ symbol: 's', exponent: -1 },
 	]);
+});
+
+// ---------- library ----------
+
+test('library: addEntry prepends, duplicates allowed', () => {
+	let lib: LibraryData = emptyLibrary();
+	lib = addEntry(lib, { label: 'mile to meter', source: '1609 m / 1 mi' });
+	lib = addEntry(lib, { label: 'hr to sec', source: '3600 s / 1 hr' });
+	assertEq(lib.entries.length, 2);
+	assertEq(lib.entries[0]!.label, 'hr to sec');
+	assertEq(lib.entries[1]!.label, 'mile to meter');
+
+	// Add the same entry again — current policy is to keep the duplicate
+	// (user deletes what they don't want; silent deduping hides clicks).
+	lib = addEntry(lib, { label: 'hr to sec', source: '3600 s / 1 hr' });
+	assertEq(lib.entries.length, 3);
+});
+
+test('library: addEntry trims label and source', () => {
+	let lib: LibraryData = emptyLibrary();
+	lib = addEntry(lib, { label: '  mi to m  ', source: '  1609 m / 1 mi  ' });
+	assertEq(lib.entries[0]!.label, 'mi to m');
+	assertEq(lib.entries[0]!.source, '1609 m / 1 mi');
+});
+
+test('library: hasEntry matches exact (label, source) after trim', () => {
+	let lib: LibraryData = emptyLibrary();
+	lib = addEntry(lib, { label: 'mi to m', source: '1609 m / 1 mi' });
+	assertEq(hasEntry(lib, 'mi to m', '1609 m / 1 mi'), true);
+	// Trims input as well.
+	assertEq(hasEntry(lib, '  mi to m  ', '1609 m / 1 mi'), true);
+	// Wrong source → no match, even with matching label.
+	assertEq(hasEntry(lib, 'mi to m', '1.609 km / 1 mi'), false);
+	// Wrong label → no match.
+	assertEq(hasEntry(lib, 'miles to meters', '1609 m / 1 mi'), false);
+});
+
+test('library: removeEntry deletes by index, ignores out-of-range', () => {
+	let lib: LibraryData = emptyLibrary();
+	lib = addEntry(lib, { label: 'a', source: '1' });
+	lib = addEntry(lib, { label: 'b', source: '2' });
+	lib = addEntry(lib, { label: 'c', source: '3' });
+	// Most-recent-first, so entries = [c, b, a]
+	lib = removeEntry(lib, 1);
+	assertEq(lib.entries.map((e) => e.label), ['c', 'a']);
+	// Out-of-range is a no-op.
+	lib = removeEntry(lib, 42);
+	assertEq(lib.entries.length, 2);
+	lib = removeEntry(lib, -1);
+	assertEq(lib.entries.length, 2);
+});
+
+test('library: removeMatching removes first (label, source) match', () => {
+	let lib: LibraryData = emptyLibrary();
+	lib = addEntry(lib, { label: 'x', source: 'a' });
+	lib = addEntry(lib, { label: 'x', source: 'b' });
+	lib = addEntry(lib, { label: 'x', source: 'a' });
+	// entries = [x/a, x/b, x/a]
+	lib = removeMatching(lib, 'x', 'a');
+	// First match removed → [x/b, x/a]
+	assertEq(lib.entries.map((e) => e.source), ['b', 'a']);
+	// No match → library unchanged.
+	lib = removeMatching(lib, 'y', 'z');
+	assertEq(lib.entries.length, 2);
+});
+
+test('library: exportLibrary/importLibrary round-trips', () => {
+	let lib: LibraryData = emptyLibrary();
+	lib = addEntry(lib, { label: 'mi to m', source: '1609 m / 1 mi' });
+	lib = addEntry(lib, { label: 'hr to s', source: '3600 s / 1 hr' });
+
+	const json = exportLibrary(lib);
+	// Importing into an empty library should reproduce the original.
+	const { library: restored, added, skipped } = importLibrary(
+		emptyLibrary(),
+		json
+	);
+	assertEq(added, 2);
+	assertEq(skipped, 0);
+	assertEq(restored.entries, lib.entries);
+});
+
+test('library: importLibrary merges, skipping duplicates by (label, source)', () => {
+	let existing: LibraryData = emptyLibrary();
+	existing = addEntry(existing, { label: 'mi to m', source: '1609 m / 1 mi' });
+	existing = addEntry(existing, { label: 'hr to s', source: '3600 s / 1 hr' });
+
+	// Incoming file has one duplicate of the existing library plus two new
+	// entries.
+	const incoming: LibraryData = {
+		version: 1,
+		entries: [
+			{ label: 'kg to g', source: '1000 g / 1 kg' },
+			{ label: 'hr to s', source: '3600 s / 1 hr' }, // duplicate
+			{ label: 'L to m^3', source: '0.001 m^3 / 1 L' },
+		],
+	};
+	const json = exportLibrary(incoming);
+
+	const { library: merged, added, skipped } = importLibrary(existing, json);
+	assertEq(added, 2);
+	assertEq(skipped, 1);
+	// New entries sit on top, in their incoming order, then the existing
+	// entries preserve their order beneath.
+	assertEq(merged.entries.map((e) => e.label), [
+		'kg to g',
+		'L to m^3',
+		'hr to s',
+		'mi to m',
+	]);
+});
+
+test('library: importLibrary throws on bad JSON', () => {
+	let threw = false;
+	try {
+		importLibrary(emptyLibrary(), '{ not valid json');
+	} catch {
+		threw = true;
+	}
+	assertEq(threw, true);
+});
+
+test('library: importLibrary throws on wrong schema', () => {
+	// Missing version.
+	let threw = false;
+	try {
+		importLibrary(emptyLibrary(), '{"entries":[]}');
+	} catch {
+		threw = true;
+	}
+	assertEq(threw, true);
+
+	// Unknown version.
+	threw = false;
+	try {
+		importLibrary(emptyLibrary(), '{"version":99,"entries":[]}');
+	} catch {
+		threw = true;
+	}
+	assertEq(threw, true);
+
+	// Entry missing required fields.
+	threw = false;
+	try {
+		importLibrary(emptyLibrary(), '{"version":1,"entries":[{"label":"x"}]}');
+	} catch {
+		threw = true;
+	}
+	assertEq(threw, true);
 });
 
 // ---------- expression evaluator ----------

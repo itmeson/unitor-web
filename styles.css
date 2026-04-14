@@ -251,3 +251,223 @@
 	background: var(--unitor-interactive-hover);
 	color: var(--unitor-text-normal);
 }
+
+/* Save-to-library star button. Visually parallel to the flip and copy
+   buttons but anchored to the top-right corner so all three affordances
+   sit at different corners of the card. Filled (★) when the card is
+   already in the library, empty (☆) otherwise. */
+.dimensional-save-btn {
+	position: absolute;
+	top: -0.6em;
+	right: -0.4em;
+	width: 1.4em;
+	height: 1.4em;
+	padding: 0;
+	margin: 0;
+	border: 1px solid var(--unitor-background-modifier-border);
+	border-radius: 50%;
+	background: var(--unitor-background-secondary);
+	color: var(--unitor-text-muted);
+	font-size: 0.9em;
+	line-height: 1;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	opacity: 0.35;
+	transform: scale(1);
+	transition: opacity 0.15s ease, transform 0.15s ease,
+		background 0.15s ease, color 0.15s ease;
+}
+
+.dimensional-card-wrap:hover .dimensional-save-btn,
+.dimensional-save-btn:focus-visible {
+	opacity: 1;
+	transform: scale(1.1);
+}
+
+.dimensional-save-btn:hover {
+	opacity: 1;
+	transform: scale(1.2);
+	background: var(--unitor-interactive-hover);
+	color: var(--unitor-text-normal);
+}
+
+/* Saved state: star stays at full opacity so the card telegraphs its
+   library membership even without a hover, and switches to a warm tone
+   so the ★ glyph reads as active. */
+.dimensional-save-btn.is-saved {
+	opacity: 1;
+	color: #c9a227;
+	border-color: #c9a227;
+}
+
+.dimensional-save-btn.is-saved:hover {
+	color: #a67f0f;
+	border-color: #a67f0f;
+}
+
+/* ------------------------------------------------------------------
+   Library palette — the right-hand side panel that lists saved
+   conversion factors and provides add / import / export controls.
+   Layout mirrors the source and preview panes so the three share a
+   visual rhythm. DOM structure is produced by src/palette.ts.
+   ------------------------------------------------------------------ */
+
+.library-panel {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: auto;
+	background: var(--unitor-background-primary);
+}
+
+.library-panel[hidden] {
+	display: none;
+}
+
+.library-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	padding: 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--unitor-background-modifier-border);
+}
+
+.library-title {
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--unitor-text-muted);
+}
+
+.library-actions {
+	display: flex;
+	gap: 0.35rem;
+}
+
+/* The add-new form at the top of the palette. Two inputs (label,
+   source) followed by an Add button, laid out on one row so adding a
+   factor feels as lightweight as typing. */
+.library-add-form {
+	display: grid;
+	grid-template-columns: 1fr 1fr auto;
+	gap: 0.35rem;
+	padding: 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--unitor-background-modifier-border);
+}
+
+.library-input {
+	appearance: none;
+	border: 1px solid var(--unitor-background-modifier-border);
+	border-radius: 4px;
+	background: var(--unitor-background-primary-alt);
+	color: var(--unitor-text-normal);
+	font: inherit;
+	font-size: 0.85rem;
+	padding: 0.3rem 0.45rem;
+	min-width: 0;
+}
+
+.library-input:focus {
+	outline: 2px solid var(--unitor-text-muted);
+	outline-offset: 1px;
+}
+
+.library-input-mono {
+	font-family: var(--unitor-font-mono);
+}
+
+.library-list {
+	flex: 1;
+	min-height: 0;
+	padding: 0.25rem 0;
+}
+
+.library-empty {
+	padding: 0.75rem;
+	font-size: 0.85rem;
+	color: var(--unitor-text-muted);
+	line-height: 1.4;
+}
+
+/* Each saved factor renders as a row: a big "insert me" button on the
+   left (label + mono source preview) and a small × delete on the
+   right. Rows are flat by default and highlight on hover to signal
+   clickability. */
+.library-entry {
+	display: flex;
+	align-items: stretch;
+	gap: 0.25rem;
+	padding: 0.15rem 0.5rem;
+}
+
+.library-entry-body {
+	flex: 1;
+	min-width: 0;
+	appearance: none;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--unitor-text-normal);
+	font: inherit;
+	text-align: left;
+	padding: 0.35rem 0.5rem;
+	cursor: pointer;
+	transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.library-entry-body:hover {
+	background: var(--unitor-interactive-hover);
+	border-color: var(--unitor-background-modifier-border);
+}
+
+.library-entry-body:focus-visible {
+	outline: 2px solid var(--unitor-text-muted);
+	outline-offset: 1px;
+}
+
+.library-entry-label {
+	font-size: 0.9rem;
+	font-weight: 500;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.library-entry-source {
+	margin-top: 0.1rem;
+	font-family: var(--unitor-font-mono);
+	font-size: 0.78rem;
+	color: var(--unitor-text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.library-entry-delete {
+	appearance: none;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--unitor-text-muted);
+	font: inherit;
+	font-size: 1rem;
+	line-height: 1;
+	width: 1.8rem;
+	cursor: pointer;
+	transition: background 0.12s ease, color 0.12s ease,
+		border-color 0.12s ease;
+}
+
+.library-entry-delete:hover {
+	background: var(--unitor-interactive-hover);
+	border-color: var(--unitor-background-modifier-border);
+	color: var(--unitor-text-normal);
+}
+
+.library-entry-delete:focus-visible {
+	outline: 2px solid var(--unitor-text-muted);
+	outline-offset: 1px;
+}

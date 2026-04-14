@@ -93,6 +93,14 @@
 			min-height: 0;
 		}
 
+		/* When the library panel is open we slot it in as a third column
+		   on the right. The preview pane stays flexible so widening the
+		   window gives it the extra space; the palette stays at a
+		   comfortable reading width. */
+		main.workspace.library-open {
+			grid-template-columns: minmax(280px, 1fr) 2fr minmax(240px, 0.8fr);
+		}
+
 		.pane {
 			background: var(--unitor-background-primary, #fff);
 			display: flex;
@@ -131,9 +139,13 @@
 		}
 
 		@media (max-width: 720px) {
-			main.workspace {
+			main.workspace,
+			main.workspace.library-open {
 				grid-template-columns: 1fr;
 				grid-template-rows: minmax(160px, 1fr) 2fr;
+			}
+			main.workspace.library-open {
+				grid-template-rows: minmax(160px, 1fr) 2fr auto;
 			}
 		}
 	</style>
@@ -145,6 +157,14 @@
 			<p>Pedagogical dimensional analysis for physics students.</p>
 		</div>
 		<div class="actions">
+			<button
+				id="library-toggle"
+				class="app-button"
+				type="button"
+				aria-controls="library-panel"
+				aria-expanded="false"
+				title="Show or hide the saved-factors palette"
+			>Show library</button>
 			<button
 				id="share-link"
 				class="app-button"
@@ -165,7 +185,19 @@
 			<div class="pane-header">Preview</div>
 			<div id="preview"></div>
 		</section>
+
+		<aside id="library-panel" class="pane library-panel" aria-label="Library" hidden></aside>
 	</main>
+
+	<!-- Hidden file input used by the palette's Import button. Clicking
+	     Import programmatically clicks this input; the change handler in
+	     app.ts reads the file as text and merges it into the library. -->
+	<input
+		id="library-file-input"
+		type="file"
+		accept="application/json,.json"
+		hidden
+	/>
 
 	<script src="dist/app.js" defer></script>
 </body>

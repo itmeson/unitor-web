@@ -35,12 +35,21 @@
 - Repo cleanup: deleted `src/_legacy/` and the Obsidian release
   artifacts (`manifest.json`, `version-bump.mjs`, `versions.json`);
   dropped their entries from `tsconfig.json` and `eslint.config.mts`
+- Stored conversion factors: `src/library.ts` stores a versioned
+  `{ label, source }` list in localStorage; `src/palette.ts` renders
+  a toggleable right-hand side panel with an Add form, Import/Export
+  buttons, and click-to-insert entries. Factor cards gained a ☆/★
+  star button that toggles library membership (prompting for a label
+  on unlabeled cards). Export downloads the current library as a JSON
+  file so teachers can share curated sets; Import merges an uploaded
+  file, skipping duplicates by (label, source). Harness covers the
+  store's add/remove/hasEntry/round-trip/import-merge behavior.
 
 ### In progress / next
-- Next feature: stored / curated conversion factors (see *Stored
-  conversion cards* below). Copy-card covers the in-document reuse
-  case; this covers the cross-session "here's our class's standard
-  factor library" case.
+- Next feature: TBD. Likely candidates are the Clear-all +
+  Reset-to-example buttons (both small, both useful), or unit-
+  compatible card addition. Revisit once the stored-factors feature
+  has some classroom use.
 
 ### Later
 - **Clear-all button.** Wipe the textarea, the URL hash, and the
@@ -51,7 +60,6 @@
   back to the built-in walkthrough without hunting for it. Probably
   lives next to Clear-all in the header.
 - Card addition and subtraction with unit-compatibility errors
-- Stored / named conversion cards for reuse
 - Export: copy as text, save as PDF, paste into Google Docs
 - Named physical constants (c, g, h, k_B, …); today only `pi`, `π`, `e`
 - Literal `×` accepted as a multiplier in source
@@ -127,26 +135,30 @@ addressed:
 - Parentheses in unit expressions (currently strictly left-to-right).
 - Fractional exponents (only integers today).
 
-### Stored conversion cards / unit definitions
-Let frequently-used conversion factors live in a shared library so
-students don't have to retype them. Possible approaches in a web-app
-context:
+### Stored conversion factors — status
+Implemented via a side palette. `src/library.ts` is a pure store
+(localStorage-backed) of `{ label, source }` entries keyed by a
+`version: 1` envelope so future schema changes can migrate forward.
+`src/palette.ts` renders the panel statelessly — header with
+Import/Export buttons, an Add-new form, and a scrollable list of
+rows. The panel lives as a third grid column in the workspace and is
+shown/hidden by a "Show library / Hide library" button in the header;
+its open/closed state persists in localStorage. Factor cards render
+a ☆/★ button that toggles library membership; unlabeled cards prompt
+for a label before saving. Clicking a palette row inserts the
+`#label \n source` snippet at the textarea cursor (same pipeline as
+the card copy button). Export downloads the current library as a
+pretty-printed JSON file; Import reads a file via a hidden file input
+and merges by (label, source) exact match, skipping duplicates so
+re-imports are idempotent.
 
-- **Sidebar / palette.** A collapsible panel lists saved factors; click
-  one to insert it at the cursor in the textarea.
-- **`@name` expansion in source.** Writing `@mi_to_km` expands to
-  `1.609 km / 1 mi` at parse time. Terse but adds parser complexity
-  and requires memorizing names.
-- **Keyboard shortcut / slash menu.** Type `/mi` in the textarea and
-  get an autocomplete of matching factors.
-
-Storage: localStorage dictionary at first (per-browser, zero backend).
-Later, optional import/export of a JSON dictionary so teachers can
-distribute a standard set.
-
-This interacts with card labels — a stored conversion would naturally
-carry a label — and with the export story (a JSON dictionary is a
-sharable artifact).
+Follow-ups deferred:
+- Preloaded starter sets per discipline (chemistry, mechanics, etc.).
+  We start empty so teachers can build and export their own.
+- In-page label editing (today you'd delete and re-add).
+- A `/search` or autocomplete affordance inside the textarea for
+  discoverability when the library grows large.
+- Cross-device sync / shared class libraries.
 
 ### Card addition and subtraction
 Extend block syntax so some lines combine additively. Today every line

@@ -39,6 +39,38 @@ export type OnFlipCallback = (sourceLine: number) => void;
  */
 export type OnCopyCallback = (snippet: string) => void;
 
+/**
+ * Callback to save (or unsave) a factor card to the library. Receives
+ * the card's raw source line and its current label if any. The app
+ * layer decides whether this is an add or a remove by consulting the
+ * library state; the renderer only signals the click. When the card
+ * has no label, the app is expected to prompt the user.
+ */
+export type OnSaveCallback = (rawLine: string, label: string | undefined) => void;
+
+/**
+ * Predicate: is this (rawLine, label) pair already in the library? The
+ * renderer calls this once per factor card to decide between the empty
+ * (☆) and filled (★) star glyph. Unlabeled cards are never considered
+ * "saved" because the library keys on label.
+ */
+export type IsSavedPredicate = (
+	rawLine: string,
+	label: string | undefined
+) => boolean;
+
+/**
+ * Bundle of optional interaction hooks the caller can wire into the
+ * renderer. Grouped into a single options object so adding more
+ * affordances later doesn't balloon the positional-argument list.
+ */
+export interface RenderCallbacks {
+	onFlip?: OnFlipCallback;
+	onCopy?: OnCopyCallback;
+	onSave?: OnSaveCallback;
+	isSaved?: IsSavedPredicate;
+}
+
 /** Build the snippet inserted when a factor card's copy button is clicked. */
 function factorSnippet(rawLine: string, label: string | undefined): string {
 	const factorLine = rawLine.trim();
@@ -81,6 +113,42 @@ function attachCopyButton(
 	btn.addEventListener('click', (e) => {
 		e.stopPropagation();
 		onCopy(snippet);
+	});
+	cardWrap.appendChild(btn);
+}
+
+/**
+ * Attach a small "save to library" star button to a factor card. The
+ * glyph is filled (★) when the predicate says this (rawLine, label) is
+ * already in the library, empty (☆) otherwise. Click toggles via
+ * `onSave`; the app decides whether that means add or remove based on
+ * its own library state.
+ */
+function attachSaveButton(
+	cardWrap: HTMLElement,
+	rawLine: string,
+	label: string | undefined,
+	saved: boolean,
+	onSave: OnSaveCallback
+): void {
+	const btn = document.createElement('button');
+	btn.className = saved
+		? 'dimensional-save-btn is-saved'
+		: 'dimensional-save-btn';
+	btn.textContent = saved ? '★' : '☆';
+	btn.setAttribute(
+		'aria-label',
+		saved ? 'Remove from library' : 'Save to library'
+	);
+	btn.setAttribute('title', saved ? 'Saved — click to remove' : 'Save to library');
+	btn.setAttribute('type', 'button');
+	btn.addEventListener('mousedown', (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+	});
+	btn.addEventListener('click', (e) => {
+		e.stopPropagation();
+		onSave(rawLine, label);
 	});
 	cardWrap.appendChild(btn);
 }
@@ -254,10 +322,10 @@ function renderResidualTerms(parent: Element, terms: UnitTerm[]): void {
 function appendParsedBlock(
 	parsed: ParseResult,
 	host: HTMLElement,
-	onFlip?: OnFlipCallback,
-	onCopy?: OnCopyCallback
+	callbacks: RenderCallbacks
 ): void {
 	const { factors, errors, resultLabel } = parsed;
+	const { onFlip, onCopy, onSave, isSaved } = callbacks;
 	const container = child(host, 'div', { className: 'dimensional-block' });
 
 	if (factors.length > 0) {
@@ -298,6 +366,12 @@ function appendParsedBlock(
 			}
 			if (onCopy) {
 				attachCopyButton(cardWrap, factorSnippet(f.raw, f.label), onCopy);
+			}
+			if (onSave) {
+				const saved = Boolean(
+					isSaved && isSaved(f.raw, f.label)
+				);
+				attachSaveButton(cardWrap, f.raw, f.label, saved, onSave);
 			}
 		});
 
@@ -350,21 +424,24 @@ function appendParsedBlock(
  * Render a single dimensional block's source into the given host
  * element, replacing its previous contents.
  *
- * When `onFlip` is provided, each factor card gets a small flip button
- * (⇅) that invokes the callback with the factor's 0-based source line.
- * When `onCopy` is provided, each factor card and the result card get
- * a small "duplicate" button (⧉) that invokes the callback with a
- * ready-to-insert source snippet (label line, if any, then factor
- * line).
+ * The callbacks object wires in per-card affordances. Each one is
+ * independently optional so callers can enable only the set they
+ * support:
+ *   - `onFlip` — adds a ⇅ button that invokes the callback with the
+ *     factor's absolute source-line index.
+ *   - `onCopy` — adds a ⧉ button on both factor and result cards that
+ *     invokes the callback with a ready-to-insert source snippet.
+ *   - `onSave` — adds a ☆/★ button on factor cards that invokes the
+ *     callback with the raw source line and the card's label. Used
+ *     with `isSaved` to pick the correct glyph.
  */
 export function renderDimensionalBlock(
 	source: string,
 	host: HTMLElement,
-	onFlip?: OnFlipCallback,
-	onCopy?: OnCopyCallback
+	callbacks: RenderCallbacks = {}
 ): void {
 	host.textContent = '';
-	appendParsedBlock(parseBlock(source), host, onFlip, onCopy);
+	appendParsedBlock(parseBlock(source), host, callbacks);
 }
 
 /**
@@ -380,13 +457,13 @@ export function renderDimensionalBlock(
  * Flip callbacks use source-line indices that are absolute within the
  * full document, so `src/app.ts`'s flip handler can splice the correct
  * textarea line regardless of which block the factor belongs to. Copy
- * callbacks just receive the pre-built source snippet to insert.
+ * callbacks just receive the pre-built source snippet to insert. See
+ * `RenderCallbacks` for the full set of optional affordances.
  */
 export function renderDocument(
 	source: string,
 	host: HTMLElement,
-	onFlip?: OnFlipCallback,
-	onCopy?: OnCopyCallback
+	callbacks: RenderCallbacks = {}
 ): void {
 	host.textContent = '';
 	const blocks = parseDocument(source);
@@ -394,6 +471,6 @@ export function renderDocument(
 		if (i > 0) {
 			child(host, 'hr', { className: 'dimensional-block-separator' });
 		}
-		appendParsedBlock(block, host, onFlip, onCopy);
+		appendParsedBlock(block, host, callbacks);
 	});
 }

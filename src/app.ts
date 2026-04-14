@@ -35,12 +35,32 @@
  * textarea on its own line and then run the same persist pipeline as
  * typing. Copy buttons on result cards synthesize a factor line from
  * the rounded value and residual units.
+ *
+ * Clicking a factor card's star button (☆/★) toggles a library entry
+ * for that card. Unlabeled cards trigger a prompt for a label before
+ * saving. The library lives in localStorage via `src/library.ts`; the
+ * side palette (`src/palette.ts`) renders it and surfaces add/insert/
+ * delete/import/export controls.
  */
 
-import { renderDocument } from './render';
+import { renderDocument, RenderCallbacks } from './render';
 import { flipLine } from './parser';
+import {
+	LibraryData,
+	addEntry,
+	emptyLibrary,
+	exportLibrary,
+	hasEntry,
+	importLibrary,
+	loadLibrary,
+	removeEntry,
+	removeMatching,
+	saveLibrary,
+} from './library';
+import { PaletteCallbacks, renderPalette } from './palette';
 
 const STORAGE_KEY = 'unitor:block';
+const PANEL_OPEN_KEY = 'unitor:library-open';
 const FLASH_DURATION_MS = 1500;
 
 const DEFAULT_BLOCK = [
@@ -82,6 +102,23 @@ function writeStorage(source: string): void {
 		localStorage.setItem(STORAGE_KEY, source);
 	} catch {
 		// Private mode, quota exceeded, or disabled storage — non-fatal.
+	}
+}
+
+/** Remember whether the library panel was open across reloads. Failures are non-fatal. */
+function readPanelOpen(): boolean {
+	try {
+		return localStorage.getItem(PANEL_OPEN_KEY) === '1';
+	} catch {
+		return false;
+	}
+}
+
+function writePanelOpen(open: boolean): void {
+	try {
+		localStorage.setItem(PANEL_OPEN_KEY, open ? '1' : '0');
+	} catch {
+		// ignore
 	}
 }
 
@@ -141,43 +178,49 @@ async function copyShareLink(btn: HTMLButtonElement): Promise<void> {
 	}
 }
 
+/**
+ * Trigger a browser download for `content` under `filename`. Uses a
+ * transient object URL + anchor click; revokes the URL asynchronously
+ * so the download actually starts before the blob goes away.
+ */
+function downloadJson(filename: string, content: string): void {
+	const blob = new Blob([content], { type: 'application/json' });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = filename;
+	document.body.appendChild(a);
+	a.click();
+	document.body.removeChild(a);
+	window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 function boot(): void {
 	const textarea = $('source') as HTMLTextAreaElement;
 	const preview = $('preview');
 	const shareBtn = $('share-link') as HTMLButtonElement;
+	const libraryBtn = $('library-toggle') as HTMLButtonElement;
+	const libraryPanel = $('library-panel');
+	const workspace = document.querySelector('main.workspace') as HTMLElement;
+	const fileInput = $('library-file-input') as HTMLInputElement;
 
-	// Re-render with the flip and copy callbacks wired in, so every
-	// render produces interactive flip and copy buttons.
-	function render(source: string): void {
-		renderDocument(source, preview, handleFlip, handleCopy);
-	}
-
-	// Flipping a factor rewrites the corresponding source line in the
-	// textarea, then runs the full input pipeline (persist, update hash,
-	// re-render) so the flipped state becomes the new shared state. The
-	// `sourceLine` index is 0-based within the block (matches the parser's
-	// 0-based line numbers).
-	function handleFlip(sourceLine: number): void {
-		const lines = textarea.value.split('\n');
-		if (sourceLine < 0 || sourceLine >= lines.length) return;
-		const original = lines[sourceLine] ?? '';
-		lines[sourceLine] = flipLine(original);
-		const updated = lines.join('\n');
-		textarea.value = updated;
-		writeStorage(updated);
-		updateUrlHash(updated);
-		render(updated);
+	// In-memory mirror of the library. All mutations produce a new value
+	// (`addEntry`/`removeEntry` are pure), which we then persist and
+	// re-render. We treat the library as non-fatal: if loading throws,
+	// we start empty.
+	let library: LibraryData;
+	try {
+		library = loadLibrary();
+	} catch {
+		library = emptyLibrary();
 	}
 
 	/**
-	 * Insert a card's source snippet at the textarea cursor, ensuring it
-	 * lands on its own line. We add a leading newline if there is
-	 * non-newline content immediately before the cursor, and a trailing
-	 * newline if non-newline content follows, so the snippet never glues
-	 * onto an adjacent line. Any existing selection is replaced. After
-	 * insertion the cursor sits at the end of the inserted snippet.
+	 * Insert a snippet at the textarea cursor, ensuring it lands on its
+	 * own line. Shared by card copy-buttons and by palette clicks so both
+	 * paths produce identical results.
 	 */
-	function handleCopy(snippet: string): void {
+	function insertAtCursor(snippet: string): void {
 		const value = textarea.value;
 		const start = textarea.selectionStart;
 		const end = textarea.selectionEnd;
@@ -201,9 +244,156 @@ function boot(): void {
 		render(updated);
 	}
 
+	// Re-render with the flip, copy, and save callbacks wired in, so
+	// every render produces interactive buttons that stay in sync with
+	// the current library.
+	function render(source: string): void {
+		const callbacks: RenderCallbacks = {
+			onFlip: handleFlip,
+			onCopy: insertAtCursor,
+			onSave: handleSave,
+			isSaved: (rawLine, label) =>
+				label !== undefined && hasEntry(library, label, rawLine),
+		};
+		renderDocument(source, preview, callbacks);
+	}
+
+	/** Rebuild the side palette from the current library snapshot. */
+	function rerenderPalette(): void {
+		renderPalette(libraryPanel, library, paletteCallbacks);
+	}
+
+	/** Persist + re-render both panes after any library mutation. */
+	function afterLibraryChange(): void {
+		saveLibrary(library);
+		rerenderPalette();
+		// The preview's star glyphs depend on library membership, so
+		// re-render it too.
+		render(textarea.value);
+	}
+
+	// Flipping a factor rewrites the corresponding source line in the
+	// textarea, then runs the full input pipeline (persist, update hash,
+	// re-render) so the flipped state becomes the new shared state. The
+	// `sourceLine` index is 0-based within the block (matches the parser's
+	// 0-based line numbers).
+	function handleFlip(sourceLine: number): void {
+		const lines = textarea.value.split('\n');
+		if (sourceLine < 0 || sourceLine >= lines.length) return;
+		const original = lines[sourceLine] ?? '';
+		lines[sourceLine] = flipLine(original);
+		const updated = lines.join('\n');
+		textarea.value = updated;
+		writeStorage(updated);
+		updateUrlHash(updated);
+		render(updated);
+	}
+
+	/**
+	 * Save (or un-save) a factor card. The library keys on
+	 * (label, source), so:
+	 *  - a labeled card toggles: if already saved, remove; else add.
+	 *  - an unlabeled card always prompts for a label and adds. We don't
+	 *    offer a remove path for unlabeled cards because they can't be
+	 *    found without a label to match on.
+	 */
+	function handleSave(rawLine: string, label: string | undefined): void {
+		const source = rawLine.trim();
+		if (label && hasEntry(library, label, source)) {
+			library = removeMatching(library, label, source);
+			afterLibraryChange();
+			return;
+		}
+		let finalLabel = label;
+		if (!finalLabel) {
+			const entered = window.prompt(
+				'Label for this factor (shown in the library palette):',
+				''
+			);
+			if (entered === null) return; // user cancelled
+			const trimmed = entered.trim();
+			if (!trimmed) return; // empty label — silently bail
+			finalLabel = trimmed;
+		}
+		library = addEntry(library, { label: finalLabel, source });
+		afterLibraryChange();
+	}
+
+	// Palette callbacks: palette clicks insert at the cursor (same pipe
+	// as card copy-buttons); add/delete/import/export mutate the library
+	// and re-render.
+	const paletteCallbacks: PaletteCallbacks = {
+		onInsert: insertAtCursor,
+		onDelete: (index) => {
+			library = removeEntry(library, index);
+			afterLibraryChange();
+		},
+		onAdd: (entry) => {
+			library = addEntry(library, entry);
+			afterLibraryChange();
+		},
+		onExport: () => {
+			downloadJson('unitor-library.json', exportLibrary(library));
+		},
+		onImport: () => {
+			// Reset the value so selecting the same file twice in a row
+			// still fires `change`.
+			fileInput.value = '';
+			fileInput.click();
+		},
+	};
+
+	fileInput.addEventListener('change', () => {
+		const file = fileInput.files?.[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = () => {
+			const text = typeof reader.result === 'string' ? reader.result : '';
+			try {
+				const summary = importLibrary(library, text);
+				library = summary.library;
+				afterLibraryChange();
+				const msg =
+					`Imported ${summary.added} new ` +
+					`${summary.added === 1 ? 'entry' : 'entries'}` +
+					(summary.skipped > 0
+						? ` (${summary.skipped} duplicate${
+								summary.skipped === 1 ? '' : 's'
+							} skipped).`
+						: '.');
+				window.alert(msg);
+			} catch (e) {
+				const msg = e instanceof Error ? e.message : String(e);
+				window.alert(`Import failed: ${msg}`);
+			}
+		};
+		reader.onerror = () => {
+			window.alert('Could not read the selected file.');
+		};
+		reader.readAsText(file);
+	});
+
+	// Library panel visibility. We toggle a class on the workspace grid
+	// so CSS can widen to three columns; we also track the state in
+	// localStorage so the panel's "open" choice survives reloads.
+	function setPanelOpen(open: boolean): void {
+		workspace.classList.toggle('library-open', open);
+		libraryPanel.hidden = !open;
+		libraryBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+		libraryBtn.textContent = open ? 'Hide library' : 'Show library';
+		writePanelOpen(open);
+	}
+
+	libraryBtn.addEventListener('click', () => {
+		const next = libraryPanel.hidden;
+		setPanelOpen(next);
+	});
+
 	const initial = loadInitialSource();
 	textarea.value = initial;
 	render(initial);
+	rerenderPalette();
+	setPanelOpen(readPanelOpen());
 	// Normalize the hash on load: if we arrived without one (or with a
 	// malformed one) we set it so refreshing round-trips; if we arrived
 	// with a valid hash already, updateUrlHash bails out early.
