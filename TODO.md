@@ -26,11 +26,21 @@
   dropped their entries from `tsconfig.json` and `eslint.config.mts`
 
 ### In progress / next
-- Decide on hosting for students (GitHub Pages live demo is planned)
-  and add a short deployment section to `README.md` when that's live
+- Multi-block document model shipped: `---` lines or 2+ blank lines
+  split the textarea into independent blocks, rendered with a thin
+  separator. Flip buttons continue to work across blocks via absolute
+  source-line indices. Harness covers the split rules.
+- "Copy card" affordance so students can pull frequently-used factors
+  into a new block (see *Stored conversion cards* below)
 
 ### Later
-- Multiple blocks in one session (see below)
+- **Clear-all button.** Wipe the textarea, the URL hash, and the
+  localStorage entry in one click. Needs a confirm prompt since it's
+  destructive.
+- **Reset-to-example button.** Re-populate the textarea with
+  `DEFAULT_BLOCK` (and clear hash + localStorage) so a student can get
+  back to the built-in walkthrough without hunting for it. Probably
+  lives next to Clear-all in the header.
 - Card addition and subtraction with unit-compatibility errors
 - Stored / named conversion cards for reuse
 - Export: copy as text, save as PDF, paste into Google Docs
@@ -52,22 +62,21 @@
 
 ## Details
 
-### Multiple blocks
-Today the textarea is a single block. A student documenting a full
-problem might want several separately-computed chains on one page.
-Options to consider:
+### Multiple blocks — status
+Implemented via a document-level parser: the textarea is split on
+either a `---` line (trimmed, all dashes, 3+) or on runs of 2+
+consecutive blank lines. Each block is parsed independently with its
+own cancellation, errors, labels, and `resultLabel`. The preview pane
+renders blocks in order with a thin `<hr>` separator between them.
+Block `startLine` offsets keep `sourceLine` indices absolute across
+the full document, so the existing flip handler works without any
+changes. URL sharing encodes the entire document in the hash as
+before, which is fine for the current block sizes.
 
-- **Blank-line separation.** Two or more consecutive blank lines end
-  the current block and start a new one. Zero new UI; parser changes
-  only.
-- **Tabs or named sections.** A navigation control lets the user flip
-  between blocks. More discoverable but adds UI state.
-- **Document-like multi-pane view.** Each block gets its own mini
-  textarea + preview pair. Closest to the original plugin vision
-  where a vault note could contain many fenced blocks.
-
-Interacts with URL sharing: with multiple blocks, the hash either
-encodes them all (bulkier URL) or only a single active block.
+Follow-ups that did not feel worth building immediately:
+- Per-block headers or collapsible regions
+- A "jump to block" TOC if documents grow long
+- Tab UI if a single scrolling preview gets unwieldy
 
 ### Export
 Students need to paste worked problems into lab reports. Possible

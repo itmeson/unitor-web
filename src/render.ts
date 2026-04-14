@@ -17,7 +17,7 @@
  * the Obsidian theme's `var(--*)` variables.
  */
 
-import { parseBlock, UnitTerm } from './parser';
+import { parseBlock, parseDocument, ParseResult, UnitTerm } from './parser';
 import { compute, AnnotatedUnitTerm, AnnotatedQuantity } from './compute';
 import { formatResultValue, superscript } from './format';
 
@@ -188,20 +188,18 @@ function renderResidualTerms(parent: Element, terms: UnitTerm[]): void {
 }
 
 /**
- * Render a single dimensional block's source into the given host
- * element, replacing its previous contents.
- *
- * When `onFlip` is provided, each factor card gets a small flip button
- * (⇅) that invokes the callback with the factor's 0-based source line.
+ * Append a single parsed block's DOM into `host` without clearing it.
+ * Used by both `renderDimensionalBlock` (which clears first) and
+ * `renderDocument` (which may append multiple blocks separated by
+ * horizontal rules).
  */
-export function renderDimensionalBlock(
-	source: string,
+function appendParsedBlock(
+	parsed: ParseResult,
 	host: HTMLElement,
 	onFlip?: OnFlipCallback
 ): void {
-	host.textContent = '';
+	const { factors, errors, resultLabel } = parsed;
 	const container = child(host, 'div', { className: 'dimensional-block' });
-	const { factors, errors, resultLabel } = parseBlock(source);
 
 	if (factors.length > 0) {
 		const { annotated, value, residualUnits } = compute(factors);
@@ -276,4 +274,49 @@ export function renderDimensionalBlock(
 			text: `line ${err.line}: ${err.message}`,
 		});
 	}
+}
+
+/**
+ * Render a single dimensional block's source into the given host
+ * element, replacing its previous contents.
+ *
+ * When `onFlip` is provided, each factor card gets a small flip button
+ * (⇅) that invokes the callback with the factor's 0-based source line.
+ */
+export function renderDimensionalBlock(
+	source: string,
+	host: HTMLElement,
+	onFlip?: OnFlipCallback
+): void {
+	host.textContent = '';
+	appendParsedBlock(parseBlock(source), host, onFlip);
+}
+
+/**
+ * Render a multi-block document (one full textarea's worth of source)
+ * into the given host, replacing its previous contents.
+ *
+ * Blocks are separated in the source by either a line of three-or-more
+ * dashes (`---`) or two-or-more consecutive blank lines — see
+ * `parseDocument`. Each block is rendered into the host and neighbouring
+ * blocks are separated by an `<hr class="dimensional-block-separator">`
+ * so the preview's structure mirrors the source's structure.
+ *
+ * Flip callbacks use source-line indices that are absolute within the
+ * full document, so `src/app.ts`'s flip handler can splice the correct
+ * textarea line regardless of which block the factor belongs to.
+ */
+export function renderDocument(
+	source: string,
+	host: HTMLElement,
+	onFlip?: OnFlipCallback
+): void {
+	host.textContent = '';
+	const blocks = parseDocument(source);
+	blocks.forEach((block, i) => {
+		if (i > 0) {
+			child(host, 'hr', { className: 'dimensional-block-separator' });
+		}
+		appendParsedBlock(block, host, onFlip);
+	});
 }

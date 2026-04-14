@@ -237,12 +237,24 @@ export function flipLine(line: string): string {
 	return trimmed;
 }
 
-export function parseBlock(source: string): ParseResult {
+/**
+ * Parse a block of source into factors, errors, and an optional trailing
+ * result label.
+ *
+ * `startLine` is the 0-based index of the first line of `source` within
+ * its containing document (the full textarea). It defaults to 0 for a
+ * single-block document; `parseDocument` passes the correct offset for
+ * each chunk so `Factor.sourceLine` and `ParseError.line` stay
+ * absolute — crucial so the app's flip handler can splice the correct
+ * textarea line.
+ */
+export function parseBlock(source: string, startLine = 0): ParseResult {
 	const factors: Factor[] = [];
 	const errors: ParseError[] = [];
 	const lines = source.split('\n');
 	let pendingLabel: string | undefined;
 	lines.forEach((line, i) => {
+		const absLine = startLine + i;
 		const trimmed = line.trim();
 		if (!trimmed) {
 			pendingLabel = undefined;
@@ -253,9 +265,9 @@ export function parseBlock(source: string): ParseResult {
 			pendingLabel = trimmed.slice(1).trim() || undefined;
 			return;
 		}
-		const result = parseLine(line, i);
+		const result = parseLine(line, absLine);
 		if (typeof result === 'string') {
-			errors.push({ line: i + 1, raw: line, message: result });
+			errors.push({ line: absLine + 1, raw: line, message: result });
 			pendingLabel = undefined;
 		} else {
 			if (pendingLabel) {
@@ -266,4 +278,82 @@ export function parseBlock(source: string): ParseResult {
 		}
 	});
 	return { factors, errors, resultLabel: pendingLabel };
+}
+
+/** One entry in a parsed multi-block document. */
+export interface DocumentBlock extends ParseResult {
+	/** 0-based textarea line index of this block's first line. */
+	startLine: number;
+	/** Raw source text for this block (used for re-rendering). */
+	source: string;
+}
+
+/**
+ * Test whether a line is a block separator. A separator is a trimmed
+ * line consisting of three or more dashes and nothing else.
+ */
+function isSeparatorLine(line: string): boolean {
+	const trimmed = line.trim();
+	if (trimmed.length < 3) return false;
+	return /^-{3,}$/.test(trimmed);
+}
+
+/**
+ * Split the textarea contents into one or more blocks and parse each.
+ *
+ * Two kinds of separator end the current block:
+ *   1. A line of three-or-more dashes (`---`, `----`, …). The separator
+ *      line itself is consumed and does not belong to either block.
+ *   2. Two or more consecutive blank lines. All of them are consumed.
+ *
+ * Blank blocks (no factors, no trailing label) are omitted from the
+ * returned array so stray separators don't produce empty preview slots.
+ * Line indices in each block's `factors` and `errors` are absolute (i.e.
+ * they refer to positions in the full source) so downstream operations
+ * like flipping a factor can splice the correct textarea line.
+ */
+export function parseDocument(source: string): DocumentBlock[] {
+	const rawLines = source.split('\n');
+	const blocks: DocumentBlock[] = [];
+
+	let blockStart = 0;
+	let i = 0;
+
+	const flushBlock = (endExclusive: number) => {
+		const blockLines = rawLines.slice(blockStart, endExclusive);
+		const blockSource = blockLines.join('\n');
+		const parsed = parseBlock(blockSource, blockStart);
+		if (parsed.factors.length === 0 && parsed.errors.length === 0 && !parsed.resultLabel) {
+			return;
+		}
+		blocks.push({ ...parsed, startLine: blockStart, source: blockSource });
+	};
+
+	while (i < rawLines.length) {
+		const line = rawLines[i] ?? '';
+		if (isSeparatorLine(line)) {
+			flushBlock(i);
+			blockStart = i + 1;
+			i += 1;
+			continue;
+		}
+		// Collapse runs of two or more blank lines into a separator.
+		if (line.trim() === '') {
+			let j = i;
+			while (j < rawLines.length && (rawLines[j] ?? '').trim() === '') {
+				j += 1;
+			}
+			const blankRun = j - i;
+			if (blankRun >= 2) {
+				flushBlock(i);
+				blockStart = j;
+				i = j;
+				continue;
+			}
+		}
+		i += 1;
+	}
+
+	flushBlock(rawLines.length);
+	return blocks;
 }

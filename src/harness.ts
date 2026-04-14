@@ -11,7 +11,7 @@
  * executes it with node). See scripts/run-harness.mjs.
  */
 
-import { parseBlock, flipLine, UnitTerm } from './parser';
+import { parseBlock, parseDocument, flipLine, UnitTerm } from './parser';
 import { compute } from './compute';
 import { formatResultValue, prettyPrintExpression } from './format';
 import { evaluateExpression } from './expression';
@@ -183,6 +183,92 @@ test('parse error: non-sense input is reported, not thrown', () => {
 	assertEq(factors.length, 0);
 	assertEq(errors.length, 1);
 	assertEq(errors[0]!.line, 1);
+});
+
+// ---------- parseDocument ----------
+
+test('parseDocument: single block with no separator', () => {
+	const blocks = parseDocument('5 km\n1 hr / 3600 s');
+	assertEq(blocks.length, 1);
+	assertEq(blocks[0]!.startLine, 0);
+	assertEq(blocks[0]!.factors.length, 2);
+	assertEq(blocks[0]!.factors[0]!.sourceLine, 0);
+	assertEq(blocks[0]!.factors[1]!.sourceLine, 1);
+});
+
+test('parseDocument: split on --- separator line', () => {
+	const src = ['5 km', '---', '9.8 m/s^2'].join('\n');
+	const blocks = parseDocument(src);
+	assertEq(blocks.length, 2);
+	assertEq(blocks[0]!.startLine, 0);
+	assertEq(blocks[0]!.factors.length, 1);
+	assertEq(blocks[0]!.factors[0]!.sourceLine, 0);
+	assertEq(blocks[1]!.startLine, 2);
+	assertEq(blocks[1]!.factors.length, 1);
+	// sourceLine is absolute — line 2 of the full doc (0-based).
+	assertEq(blocks[1]!.factors[0]!.sourceLine, 2);
+});
+
+test('parseDocument: split on 2+ blank lines', () => {
+	const src = ['5 km', '', '', '9.8 m/s^2'].join('\n');
+	const blocks = parseDocument(src);
+	assertEq(blocks.length, 2);
+	assertEq(blocks[0]!.factors[0]!.sourceLine, 0);
+	assertEq(blocks[1]!.startLine, 3);
+	assertEq(blocks[1]!.factors[0]!.sourceLine, 3);
+});
+
+test('parseDocument: single blank line does NOT split', () => {
+	const src = ['5 km', '', '9.8 m/s^2'].join('\n');
+	const blocks = parseDocument(src);
+	assertEq(blocks.length, 1);
+	assertEq(blocks[0]!.factors.length, 2);
+});
+
+test('parseDocument: empty blocks between separators are skipped', () => {
+	const src = ['---', '5 km', '---', '---', '9.8 m/s^2', '---'].join('\n');
+	const blocks = parseDocument(src);
+	assertEq(blocks.length, 2);
+	assertEq(blocks[0]!.factors[0]!.sourceLine, 1);
+	assertEq(blocks[1]!.factors[0]!.sourceLine, 4);
+});
+
+test('parseDocument: "----abc" is NOT a separator', () => {
+	// Trimmed line must be all dashes to count as a separator. "----abc" isn't.
+	const src = ['5 km', '----abc', '9.8 m/s^2'].join('\n');
+	const blocks = parseDocument(src);
+	// The stray text produces a parse error, but the block is not split.
+	assertEq(blocks.length, 1);
+	assertEq(blocks[0]!.factors.length, 2);
+	assertEq(blocks[0]!.errors.length, 1);
+	assertEq(blocks[0]!.errors[0]!.line, 2);
+});
+
+test('parseDocument: exactly three dashes counts, two does not', () => {
+	const srcThree = ['5 km', '---', '9.8 m/s^2'].join('\n');
+	const srcTwo = ['5 km', '--', '9.8 m/s^2'].join('\n');
+	assertEq(parseDocument(srcThree).length, 2);
+	// "--" is a parse error, but not a separator.
+	const blocks = parseDocument(srcTwo);
+	assertEq(blocks.length, 1);
+	assertEq(blocks[0]!.errors.length, 1);
+});
+
+test('parseDocument: labels and resultLabel stay per-block', () => {
+	const src = [
+		'# surface area',
+		'`4*pi*6.4^2` m^2',
+		'# final',
+		'---',
+		'# speed of light',
+		'3*10^8 m/s',
+	].join('\n');
+	const blocks = parseDocument(src);
+	assertEq(blocks.length, 2);
+	assertEq(blocks[0]!.factors[0]!.label, 'surface area');
+	assertEq(blocks[0]!.resultLabel, 'final');
+	assertEq(blocks[1]!.factors[0]!.label, 'speed of light');
+	assertEq(blocks[1]!.resultLabel, undefined);
 });
 
 // ---------- flipLine ----------

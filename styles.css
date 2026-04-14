@@ -38,6 +38,15 @@
 	padding: 0.75em 0.5em;
 }
 
+/* Horizontal rule between rendered blocks in a multi-block document.
+   Matches the weight of card borders so the separator reads as part of
+   the preview's structure rather than page chrome. */
+.dimensional-block-separator {
+	border: 0;
+	border-top: 1px solid var(--unitor-background-modifier-border);
+	margin: 0.5em 0.5em;
+}
+
 .dimensional-row {
 	display: flex;
 	flex-direction: row;

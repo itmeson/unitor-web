@@ -1,12 +1,12 @@
 /**
  * Unitor web-app entry point.
  *
- * Steps 1–5 complete. The pipeline is:
+ * The pipeline is:
  *
  *   textarea input
  *     → localStorage.setItem(STORAGE_KEY, source)       (persist)
  *     → history.replaceState(..., "#<encoded source>")  (permalink)
- *     → renderDimensionalBlock(source, preview)         (render)
+ *     → renderDocument(source, preview)                 (render)
  *
  * On load, the initial source is chosen in this priority order:
  *   1. URL hash (so a shared link always wins)
@@ -30,7 +30,7 @@
  * reflected in the textarea, localStorage, URL hash, and preview.
  */
 
-import { renderDimensionalBlock } from './render';
+import { renderDocument } from './render';
 import { flipLine } from './parser';
 
 const STORAGE_KEY = 'unitor:block';
@@ -142,7 +142,7 @@ function boot(): void {
 	// Re-render with the flip callback wired in, so every render produces
 	// interactive flip buttons.
 	function render(source: string): void {
-		renderDimensionalBlock(source, preview, handleFlip);
+		renderDocument(source, preview, handleFlip);
 	}
 
 	// Flipping a factor rewrites the corresponding source line in the
