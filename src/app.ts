@@ -1,45 +1,34 @@
 /**
  * Unitor web-app entry point.
  *
- * Two persistence modes, decided once at boot by looking at the
- * incoming URL:
+ * Persistence model: the URL is the sole source of truth for document
+ * content. Source goes in the hash, library goes in `?lib=`, and a
+ * `?doc` sentinel marks the intentionally-empty-calculator case.
+ * Every edit — typing, flipping, starring, palette add/delete/import —
+ * writes the new state to the URL in place via `history.replaceState`.
+ * localStorage never holds content, so there's no "accumulation"
+ * pattern where a student's personal library leaks into a teacher-
+ * shared link, and a teacher who pastes a link into any browser sees
+ * exactly the state they captured.
  *
- *  - **Document mode**: the URL is non-empty — a `#source` fragment,
- *    a `?lib=…` query, or both. The URL is the canonical state, and
- *    all subsequent edits update the URL in place via
- *    `history.replaceState`. localStorage is deliberately NOT
- *    touched in this mode. This is what makes teacher-shared links
- *    deterministic: every student who opens the link sees exactly
- *    the state the teacher captured, regardless of their own prior
- *    Unitor history, and nothing they do here leaks into their
- *    personal localStorage library.
+ * The obvious downside — close the tab and your unbookmarked work is
+ * gone — is mitigated by a small localStorage-backed **recents** list
+ * under `unitor:recents`. Each time the user makes a change we record
+ * the current URL (throttled to once every two minutes while editing,
+ * plus one write on `beforeunload` so a close always captures the
+ * final state). The header's "Recent" button opens a dropdown of
+ * those URLs, labelled from the document's first `#label` line, so a
+ * closed tab can be restored in one click.
  *
- *  - **Personal mode**: the URL has no state (plain bookmark, no
- *    query, no hash). Source comes from the localStorage draft and
- *    library comes from the localStorage-backed store. Edits update
- *    both the URL (so "Copy share link" is accurate at any moment)
- *    and localStorage (so returning visitors resume where they left
- *    off). This is the single-user workspace pattern.
- *
- * In both modes the URL always reflects the current state, so the
- * "Copy share link" button does the same thing either way: shares
- * the current source+library together.
- *
- * On boot, the initial source is chosen in this priority order:
- *   1. URL hash (any teacher-shared or self-shared link)          — document mode
- *   2. `?lib=` present but no hash                                — document mode, empty source
- *   3. localStorage draft (returning personal visitor)            — personal mode
- *   4. a small default block (first-ever visit)                   — personal mode
- *
- * The library follows the same priority: `?lib=` wins if present,
- * otherwise localStorage, otherwise empty.
+ * The only other localStorage key is `unitor:library-open`, which
+ * persists the UI preference for whether the side palette is open.
  *
  * Clicking a factor's flip button rewrites its source line in-place
  * via `flipLine` and then runs the same pipeline as typing. Clicking
  * a card's copy button inserts the card's source at the textarea
  * cursor. Clicking a card's star button toggles the factor in the
  * library. All of these end by calling `persistState()`, which
- * writes to the URL and (in personal mode only) localStorage.
+ * updates the URL and tentatively schedules a recents write.
  */
 
 import { renderDocument, RenderCallbacks } from './render';
@@ -53,25 +42,25 @@ import {
 	exportLibrary,
 	hasEntry,
 	importLibrary,
-	loadLibrary,
 	removeEntry,
 	removeMatching,
-	saveLibrary,
 } from './library';
+import {
+	MAX_RECENTS,
+	RecentsData,
+	addRecent,
+	clearRecents,
+	labelForUrl,
+	loadRecents,
+	relativeTime,
+	saveRecents,
+} from './recents';
 import { PaletteCallbacks, renderPalette } from './palette';
 
-const SOURCE_STORAGE_KEY = 'unitor:block';
 const PANEL_OPEN_KEY = 'unitor:library-open';
 const FLASH_DURATION_MS = 1500;
-
-const DEFAULT_BLOCK = [
-	'#speed in miles per hour',
-	'30 mile/hr',
-	'1609 meters / 1 mile',
-	'1 hr / 60 min',
-	'1 min / 60 sec',
-	'#speed in meters per sec',
-].join('\n');
+/** Minimum gap between auto-recorded recents while the user is typing. */
+const RECENTS_THROTTLE_MS = 2 * 60 * 1000;
 
 function $(id: string): HTMLElement {
 	const el = document.getElementById(id);
@@ -103,40 +92,16 @@ function decodeLibraryFromQuery(): LibraryData | null {
 }
 
 /**
- * Does the URL carry any state? This is the sole signal that picks
- * document mode over personal mode, and it's fixed at boot time —
- * mode doesn't flip mid-session even as the URL updates in place.
- *
- * Three signals can trigger document mode:
- *  - a non-empty `#source` fragment (length > 1 because a bare `#` is
- *    often stripped by browsers during copy/paste and is unreliable);
- *  - a `?lib=…` query with an embedded library;
- *  - a `?doc` sentinel — used when a teacher captures an intentionally
- *    empty calculator (no source, no library) and needs the shared
- *    URL to stay document-mode on reload, not fall back to the
- *    student's localStorage.
+ * Does the URL carry any state? Exposed on the dev handle for
+ * debugging — no longer used by boot (a bare URL is now just an empty
+ * calculator, same as any other empty state). Keeps three signals in
+ * mind: a non-empty `#source` fragment, a `?lib=…` query, or a `?doc`
+ * sentinel.
  */
 function urlHasState(): boolean {
 	if (location.hash.length > 1) return true;
 	const params = new URLSearchParams(location.search);
 	return params.has('lib') || params.has('doc');
-}
-
-/** Read from localStorage, tolerating private-mode restrictions that can throw. */
-function readSourceStorage(): string | null {
-	try {
-		return localStorage.getItem(SOURCE_STORAGE_KEY);
-	} catch {
-		return null;
-	}
-}
-
-function writeSourceStorage(source: string): void {
-	try {
-		localStorage.setItem(SOURCE_STORAGE_KEY, source);
-	} catch {
-		// Private mode, quota exceeded, or disabled storage — non-fatal.
-	}
 }
 
 /** Remember whether the library panel was open across reloads. Failures are non-fatal. */
@@ -159,62 +124,42 @@ function writePanelOpen(open: boolean): void {
 interface InitialState {
 	source: string;
 	library: LibraryData;
-	/** True if state was loaded from the URL → document mode. */
-	fromUrl: boolean;
 }
 
+/**
+ * Resolve the initial state from the URL. A bare URL produces a blank
+ * calculator so the user can just start typing; there is no built-in
+ * demo block. Tutorial pages (if we want them) are just separate URLs
+ * shipped with a non-empty `#source`.
+ */
 function loadInitialState(): InitialState {
-	if (urlHasState()) {
-		// Document mode. Missing hash means "start with empty source" —
-		// a teacher who set up a library-only link expects students to
-		// start from a blank textarea, not the default demo block.
-		return {
-			source: decodeHash() ?? '',
-			library: decodeLibraryFromQuery() ?? emptyLibrary(),
-			fromUrl: true,
-		};
-	}
-	// Personal mode. Fall back through localStorage to the default demo.
-	const stored = readSourceStorage();
 	return {
-		source: stored ?? DEFAULT_BLOCK,
-		library: loadLibrary(),
-		fromUrl: false,
+		source: decodeHash() ?? '',
+		library: decodeLibraryFromQuery() ?? emptyLibrary(),
 	};
 }
 
 /**
  * Replace the current URL with one encoding the given source and
- * library. Always called regardless of mode so "Copy share link"
- * reflects current state. The query param is omitted entirely when
- * the library is empty, so a blank personal-mode session doesn't
- * carry a dangling `?lib=%7B…%7D` in the address bar.
+ * library. The query param is omitted entirely when the library is
+ * empty, so a bare session doesn't carry a dangling `?lib=%7B…%7D` in
+ * the address bar.
  *
- * `documentMode` matters only for the edge case of a fully empty
- * document — no source AND no library. Without a signal the reload
- * would drop back to personal mode and pull in the student's
- * localStorage, ruining the "empty calculator" assignment. In that
- * case only, we emit a `?doc` sentinel so the URL stays document-
- * mode. Personal-mode sessions with empty content (e.g. a first
- * visit before the default block has been typed into) get a clean
- * URL without the sentinel.
+ * If source AND library are both empty we emit a `?doc` sentinel so a
+ * shared "blank calculator" link stays blank on reload instead of
+ * reverting to the default demo block.
  *
  * Swallows errors from exotic hosts or over-long URLs: a failed URL
- * write is non-fatal because personal mode still has localStorage and
- * document mode still has in-memory state for the tab's lifetime.
+ * write is non-fatal because in-memory state survives for the tab's
+ * lifetime.
  */
-function updateUrl(
-	source: string,
-	library: LibraryData,
-	documentMode: boolean
-): void {
+function updateUrl(source: string, library: LibraryData): void {
 	const libPresent = library.entries.length > 0;
 	const sourcePresent = source.length > 0;
-	const needsSentinel = documentMode && !libPresent && !sourcePresent;
 
 	const params = new URLSearchParams();
 	if (libPresent) params.set('lib', encodeLibraryForUrl(library));
-	if (needsSentinel) params.set('doc', '');
+	if (!libPresent && !sourcePresent) params.set('doc', '');
 
 	let target = location.pathname;
 	const qs = params.toString();
@@ -226,7 +171,7 @@ function updateUrl(
 	try {
 		history.replaceState(null, '', target);
 	} catch {
-		// ignore — in-memory state and (personal mode) localStorage survive
+		// ignore — in-memory state still drives the live session
 	}
 }
 
@@ -282,6 +227,8 @@ function boot(): void {
 	const shareBtn = $('share-link') as HTMLButtonElement;
 	const libraryBtn = $('library-toggle') as HTMLButtonElement;
 	const libraryPanel = $('library-panel');
+	const recentsBtn = $('recents-toggle') as HTMLButtonElement;
+	const recentsPanel = $('recents-panel');
 	const workspace = document.querySelector('main.workspace') as HTMLElement;
 	const fileInput = $('library-file-input') as HTMLInputElement;
 
@@ -290,23 +237,43 @@ function boot(): void {
 	// (`addEntry`/`removeEntry` are pure), which we then persist and
 	// re-render.
 	let library: LibraryData = initial.library;
-	// `fromUrl` is captured at boot and does NOT change even as the URL
-	// updates in place. This keeps the persistence rule stable for the
-	// session: document-mode sessions never write to localStorage,
-	// personal-mode sessions always do.
-	const documentMode = initial.fromUrl;
+
+	// Recents bookkeeping. We only start recording after the user makes
+	// their first edit in this session — otherwise a student who opens a
+	// teacher link and doesn't touch it would still push that link onto
+	// their recents, crowding out genuinely-theirs work. Throttle keeps
+	// per-keystroke persistence from flooding localStorage; the
+	// `beforeunload` handler below catches the final state so a close
+	// always lands in recents.
+	let recents: RecentsData = loadRecents();
+	let hasEdited = false;
+	let lastRecentSave = 0;
+
+	/** Write the current URL into the recents list now. */
+	function recordRecent(): void {
+		const url = location.pathname + location.search + location.hash;
+		const now = Date.now();
+		recents = addRecent(recents, url, now);
+		saveRecents(recents);
+		lastRecentSave = now;
+	}
+
+	/** Record into recents iff the user has edited and enough time has passed. */
+	function maybeRecordRecent(): void {
+		if (!hasEdited) return;
+		const now = Date.now();
+		if (now - lastRecentSave < RECENTS_THROTTLE_MS) return;
+		recordRecent();
+	}
 
 	/**
 	 * Single write-through step. Always updates the URL so "Copy share
-	 * link" is accurate at any moment; updates localStorage only in
-	 * personal mode so document-mode sessions stay leak-free.
+	 * link" is accurate at any moment; the throttled recents write is
+	 * what provides crash-recovery for unsaved work.
 	 */
 	function persistState(): void {
-		updateUrl(textarea.value, library, documentMode);
-		if (!documentMode) {
-			writeSourceStorage(textarea.value);
-			saveLibrary(library);
-		}
+		updateUrl(textarea.value, library);
+		maybeRecordRecent();
 	}
 
 	/**
@@ -333,6 +300,7 @@ function boot(): void {
 		textarea.value = updated;
 		textarea.focus();
 		textarea.setSelectionRange(newCursor, newCursor);
+		hasEdited = true;
 		persistState();
 		render(updated);
 	}
@@ -358,6 +326,7 @@ function boot(): void {
 
 	/** Persist + re-render both panes after any library mutation. */
 	function afterLibraryChange(): void {
+		hasEdited = true;
 		persistState();
 		rerenderPalette();
 		// The preview's star glyphs depend on library membership.
@@ -376,6 +345,7 @@ function boot(): void {
 		lines[sourceLine] = flipLine(original);
 		const updated = lines.join('\n');
 		textarea.value = updated;
+		hasEdited = true;
 		persistState();
 		render(updated);
 	}
@@ -482,15 +452,109 @@ function boot(): void {
 		setPanelOpen(next);
 	});
 
+	// Recents dropdown. Rendered on demand from the current recents
+	// snapshot so it always reflects the latest saves (including the one
+	// the current session just pushed). Each row is a link to the stored
+	// URL; clicking navigates the tab, which triggers a full boot on the
+	// target state.
+	function renderRecentsPanel(): void {
+		recentsPanel.innerHTML = '';
+		const now = Date.now();
+
+		const header = document.createElement('div');
+		header.className = 'recents-header';
+		const title = document.createElement('span');
+		title.className = 'recents-title';
+		title.textContent = 'Recent';
+		header.appendChild(title);
+		if (recents.entries.length > 0) {
+			const clearBtn = document.createElement('button');
+			clearBtn.type = 'button';
+			clearBtn.className = 'recents-clear';
+			clearBtn.textContent = 'Clear';
+			clearBtn.title = 'Remove all recent URLs from this browser';
+			clearBtn.addEventListener('click', () => {
+				if (!window.confirm('Clear all recent URLs?')) return;
+				recents = clearRecents();
+				saveRecents(recents);
+				renderRecentsPanel();
+			});
+			header.appendChild(clearBtn);
+		}
+		recentsPanel.appendChild(header);
+
+		if (recents.entries.length === 0) {
+			const empty = document.createElement('div');
+			empty.className = 'recents-empty';
+			empty.textContent =
+				'No recent URLs yet. Once you edit something here, a snapshot will appear so you can recover it later.';
+			recentsPanel.appendChild(empty);
+			return;
+		}
+
+		const list = document.createElement('ul');
+		list.className = 'recents-list';
+		for (const entry of recents.entries) {
+			const li = document.createElement('li');
+			li.className = 'recents-entry';
+			const a = document.createElement('a');
+			a.className = 'recents-link';
+			a.href = entry.url;
+
+			const label = document.createElement('span');
+			label.className = 'recents-label';
+			label.textContent = labelForUrl(entry.url);
+
+			const when = document.createElement('span');
+			when.className = 'recents-when';
+			when.textContent = relativeTime(entry.savedAt, now);
+
+			a.appendChild(label);
+			a.appendChild(when);
+			li.appendChild(a);
+			list.appendChild(li);
+		}
+		recentsPanel.appendChild(list);
+	}
+
+	function setRecentsOpen(open: boolean): void {
+		recentsPanel.hidden = !open;
+		recentsBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+		if (open) renderRecentsPanel();
+	}
+
+	recentsBtn.addEventListener('click', () => {
+		setRecentsOpen(recentsPanel.hidden);
+	});
+
+	// Close the recents dropdown on outside-click so it behaves like a
+	// normal menu without needing a backdrop element.
+	document.addEventListener('click', (ev) => {
+		if (recentsPanel.hidden) return;
+		const target = ev.target as Node | null;
+		if (target && (recentsPanel.contains(target) || recentsBtn.contains(target))) {
+			return;
+		}
+		setRecentsOpen(false);
+	});
+	document.addEventListener('keydown', (ev) => {
+		if (ev.key === 'Escape' && !recentsPanel.hidden) {
+			setRecentsOpen(false);
+			recentsBtn.focus();
+		}
+	});
+
 	textarea.value = initial.source;
 	render(initial.source);
 	rerenderPalette();
 	setPanelOpen(readPanelOpen());
 	// Normalize the URL on load. If we arrived with partial state, the
-	// URL will now reflect the full resolved state.
-	persistState();
+	// URL will now reflect the full resolved state. This does NOT count
+	// as an edit, so nothing hits recents yet.
+	updateUrl(textarea.value, library);
 
 	textarea.addEventListener('input', () => {
+		hasEdited = true;
 		persistState();
 		render(textarea.value);
 	});
@@ -502,9 +566,7 @@ function boot(): void {
 	// External hash changes (address-bar edits, back/forward, paste-and-go
 	// in the same tab). history.replaceState does not trigger hashchange
 	// so this only fires for genuinely external edits. We re-sync the
-	// textarea and preview to the new hash; we don't touch localStorage,
-	// matching document-mode semantics even in personal mode (an external
-	// paste isn't an edit the user wants saved to their draft).
+	// textarea and preview to the new hash.
 	//
 	// We intentionally do NOT re-read `?lib=` here: hashchange doesn't
 	// fire on query-only changes, and a teacher link opened in a fresh
@@ -519,18 +581,34 @@ function boot(): void {
 		render(source);
 	});
 
+	// Final safety net for crash recovery. If the user has made edits but
+	// the throttle hasn't fired yet, `beforeunload` forces one last
+	// recents write so closing the tab right after typing doesn't lose
+	// the work. Wrapped in a try/catch because some browsers restrict
+	// what's allowed during unload.
+	window.addEventListener('beforeunload', () => {
+		if (!hasEdited) return;
+		try {
+			recordRecent();
+		} catch {
+			// ignore — best-effort; the most recent throttled save is still there
+		}
+	});
+
 	// Dev handle: live getters for the runtime state so you can inspect
-	// `unitor.documentMode`, `unitor.library`, etc. from the browser
-	// console without setting breakpoints. Each property reads the
-	// current closure variable on access, so it stays accurate as the
-	// user types / saves / imports. Cheap, harmless (no server, no
-	// privileged actions), and useful for diagnosing teacher/student
-	// reports like "the wrong library loaded".
+	// `unitor.library`, `unitor.recents`, etc. from the browser console
+	// without setting breakpoints. Each property reads the current
+	// closure variable on access, so it stays accurate as the user
+	// types / saves / imports. Cheap, harmless (no server, no
+	// privileged actions), and useful for diagnosing reports like "the
+	// wrong library loaded" or "my recents disappeared".
 	(window as unknown as { unitor: unknown }).unitor = {
-		get documentMode() { return documentMode; },
 		get library() { return library; },
 		get source() { return textarea.value; },
+		get recents() { return recents; },
+		get hasEdited() { return hasEdited; },
 		urlHasState,
+		MAX_RECENTS,
 	};
 }
 

@@ -44,38 +44,48 @@
   file so teachers can share curated sets; Import merges an uploaded
   file, skipping duplicates by (label, source). Harness covers the
   store's add/remove/hasEntry/round-trip/import-merge behavior.
-- Teacher-shareable URLs with embedded state ("document mode"):
-  `?lib=` now carries the library JSON alongside `#source`. Share link
-  captures both. Boot picks one of two modes based on whether the URL
-  has any state (`?lib=…` or `#source`):
-  - **Document mode** (URL has state) — URL is canonical; edits update
-    the URL in place but NEVER write to localStorage. Students who
-    open a teacher link see exactly that state, and their work on an
-    assignment stays isolated from their personal library.
-  - **Personal mode** (plain URL) — today's behavior; edits update
-    both URL and localStorage so returning visitors resume where they
-    left off.
-  Mode is fixed at boot and doesn't flip mid-session. This cleanly
-  solves the accumulation problem (teacher factors never leak into
-  student localStorage) and lets teachers verify student work by
-  opening the student's shared link. Harness covers
-  `encodeLibraryForUrl` compactness and `encode → decode` round-trip
-  plus malformed-input fallbacks.
+- Teacher-shareable URLs with embedded state: `?lib=` carries the
+  library JSON alongside `#source`, so a single URL captures both the
+  source and the factor palette. The share-link button always copies
+  the current URL so "send this to a student" and "bookmark this for
+  later" are the same action. Harness covers `encodeLibraryForUrl`
+  compactness and `encode → decode` round-trip plus malformed-input
+  fallbacks.
+- URL-as-sole-state persistence: localStorage no longer holds
+  document content. Every edit updates the URL in place via
+  `history.replaceState`; the library travels in `?lib=`; an empty
+  calculator is marked with a `?doc` sentinel so a shared blank
+  state round-trips. This eliminates the accumulation pattern (the
+  student's prior state can't leak into a teacher-shared link) and
+  makes the tool behave the same in normal, private, and incognito
+  tabs.
+- Recents list for crash recovery: localStorage keeps a small
+  (`MAX_RECENTS = 20`) list of URLs the user has edited under
+  `unitor:recents`. Writes are throttled to once every two minutes
+  during active editing plus a `beforeunload` flush, so closing a
+  tab without bookmarking still leaves a recoverable snapshot. The
+  header's "Recent" button opens a dropdown that labels each entry
+  by its first `#label` line (falling back to first non-empty source
+  line, then a library-size hint, then "(empty calculator)") and its
+  save time relative to now. Harness covers dedup, cap, label
+  priority, empty-URL refusal, and relative-time thresholds.
 
 ### In progress / next
 - Next feature: TBD. Candidates are Clear-all + Reset-to-example
   buttons, unit-compatible card addition, or preloaded starter
-  libraries per discipline. Revisit once the teacher-workflow loop
-  has some classroom use.
+  libraries per discipline. Revisit once the URL-only model has some
+  classroom use.
 
 ### Later
-- **Clear-all button.** Wipe the textarea, the URL hash, and the
-  localStorage entry in one click. Needs a confirm prompt since it's
-  destructive.
-- **Reset-to-example button.** Re-populate the textarea with
-  `DEFAULT_BLOCK` (and clear hash + localStorage) so a student can get
-  back to the built-in walkthrough without hunting for it. Probably
-  lives next to Clear-all in the header.
+- **Clear-all button.** Wipe the textarea and library in one click
+  (navigating to a bare `?doc` URL). Needs a confirm prompt since
+  it's destructive. Recents will still contain the prior state so
+  recovery remains one click away.
+- **Tutorial / walkthrough links.** The bare URL is now a blank
+  calculator — there is no built-in demo. If we want an onboarding
+  path, ship it as a distinct URL (or a small set of them) whose
+  `#source` seeds a worked example. Could link from a "Help" button
+  in the header or from a first-run hint.
 - Card addition and subtraction with unit-compatibility errors
 - Export: copy as text, save as PDF, paste into Google Docs
 - Named physical constants (c, g, h, k_B, …); today only `pi`, `π`, `e`
@@ -177,65 +187,72 @@ Follow-ups deferred:
   discoverability when the library grows large.
 - Cross-device sync / shared class libraries.
 
-### Document mode vs personal mode — status
-Persistence has two modes, decided once at boot from whether the URL
-has any state in it:
+### URL-as-sole-state persistence — status
+The URL is the single source of truth for document content: source
+lives in the hash, library lives in `?lib=`, and a `?doc` sentinel
+marks the intentionally-empty-calculator case so a shared blank
+link round-trips instead of reverting to the built-in demo block.
+Every edit (typing, flip, star, palette add/delete/import/export)
+writes the new state to the URL in place via `history.replaceState`.
+localStorage never holds content.
 
-- **Document mode** — URL has `#source` and/or `?lib=…`. The URL is
-  the single source of truth. Every edit (typing, flip, star, palette
-  add/delete/import) updates the URL in place via
-  `history.replaceState`; localStorage is never touched in this mode.
-  This makes teacher links deterministic: any student opening the
-  link sees exactly the teacher's captured state regardless of their
-  own Unitor history, and none of their assignment work leaks into
-  their personal library. If the student wants to save their
-  progress, they bookmark the URL or click "Copy share link".
-- **Personal mode** — URL has no state (fresh visit, plain
-  bookmark). Source and library come from localStorage; edits update
-  localStorage plus the URL (so "Copy share link" always reflects
-  current state). This is the single-user workspace pattern for
-  students/teachers working on their own between assignments.
+On boot, we simply read whatever's in the URL: hash becomes the
+source, `?lib=` becomes the library, missing pieces are just empty.
+A bare URL is therefore a blank calculator — no built-in demo — so
+opening a fresh tab to start fresh behaves the way you'd expect
+without surprising "where did this text come from?" moments. The
+`hashchange` listener re-syncs the textarea on external address-bar
+edits but deliberately does not re-read `?lib=`, because browsers
+don't fire a standard event on query-only changes and re-reading
+there would surprise users by wiping in-session library edits.
 
-The mode is captured at boot (`documentMode` in `app.ts`) and is
-fixed for the session. The URL always updates regardless of mode;
-only the localStorage write is gated. `encodeLibraryForUrl` emits
-compact (unindented) JSON to keep URLs short enough for LMS / email
-transport; `exportLibrary` stays pretty-printed for file downloads.
-Malformed `?lib=` values fall back to an empty library rather than
-crashing the page. The hashchange listener re-syncs source on
-external address-bar edits but deliberately does not re-read
-`?lib=`, because browsers don't fire a standard event on query-only
-changes and re-reading there would surprise users by wiping
-in-session library edits.
+`encodeLibraryForUrl` emits compact (unindented) JSON to keep URLs
+short enough for LMS / email transport; `exportLibrary` stays
+pretty-printed for file downloads. Malformed `?lib=` values fall
+back to an empty library rather than crashing the page.
 
-Three URL signals trigger document mode: a non-empty `#source`, a
-`?lib=…` query, and a bare `?doc` sentinel. The sentinel exists for
-the "fully empty calculator" case — a teacher who clears both source
-and library and clicks Copy share link. Without it the resulting URL
-would carry neither a meaningful hash nor a `?lib=` and would drop
-back to personal mode on reload, pulling in the student's
-localStorage instead of reproducing the empty state. `updateUrl`
-emits `?doc` only when document mode is active AND both source and
-library are empty, so personal-mode sessions never grow a sentinel
-in their URL.
+The trade-off for URL-as-sole-state — close a tab without
+bookmarking and your work is gone — is softened by the recents list
+described below.
 
-A small dev handle is exposed on `window.unitor` for console
-inspection: `documentMode`, `library`, and `source` are live
-getters, and `urlHasState()` is callable. Harmless and useful for
-triaging student reports about surprising state.
+### Recents list — status
+Because content lives only in the URL, closing a tab without
+bookmarking would otherwise lose work. `src/recents.ts` backs a
+small `unitor:recents` localStorage entry with the last
+`MAX_RECENTS = 20` URLs the user has edited, versioned the same way
+as the library so future schema changes stay additive.
+
+The app records to recents only after the user's first edit in the
+session (so a student opening a teacher link and not touching it
+doesn't pollute their recents), throttled to once every two minutes
+while editing plus one final `beforeunload` flush so closing the
+tab right after typing still captures the final state. Dedup is by
+exact URL — repeated edits to the same document refresh one row
+rather than filling the list with intermediate versions.
+
+The "Recent" header button opens a floating dropdown of these URLs.
+Each row labels the entry by the document's first `#label` line,
+falling back to the first non-empty source line, then a library-
+size hint like "3 factors", then "(empty calculator)". Relative
+save times ("3 minutes ago", "yesterday") are fixed-threshold and
+locale-formatted beyond a week. Clicking a row navigates the tab,
+which triggers a fresh boot with the stored URL's state.
+
+A dev handle is exposed on `window.unitor` for console inspection:
+`library`, `source`, `recents`, and `hasEdited` are live getters,
+`urlHasState()` is callable, and `MAX_RECENTS` is a constant.
+Harmless and useful for triaging reports about surprising state.
 
 Follow-ups deferred:
-- A "save this to my library" action for moving teacher-provided
-  factors from an assignment's session library into localStorage.
-  Today the only path is JSON export → open plain Unitor → JSON
-  import. Add this if students actually ask for it.
-- Visual indication of document mode (e.g., a subtle header badge).
-  Skipped for v1; add only if users report confusion about why their
-  edits aren't "sticking" between sessions on an assignment URL.
 - URL length mitigation (compression / short-link service) if
   real-world libraries get too big for some LMS URL limits. Current
   compact JSON encoding is probably enough for classroom-sized
   libraries.
+- A "pin" affordance for recents entries the student wants to keep
+  around even as older work pushes newer items off the list.
+- Cross-device sync for recents (e.g., behind a login). Probably
+  out of scope for a classroom tool; bookmarks and share-links cover
+  the cross-device story.
 
 ### Card addition and subtraction
 Extend block syntax so some lines combine additively. Today every line

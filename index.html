@@ -55,6 +55,9 @@
 			display: flex;
 			align-items: center;
 			gap: 0.5rem;
+			/* Positioning context for the Recent dropdown, which is absolutely
+			   positioned so it floats over the workspace grid below. */
+			position: relative;
 		}
 
 		.app-button {
@@ -158,6 +161,15 @@
 		</div>
 		<div class="actions">
 			<button
+				id="recents-toggle"
+				class="app-button"
+				type="button"
+				aria-controls="recents-panel"
+				aria-expanded="false"
+				aria-haspopup="true"
+				title="Recover a recent URL from this browser"
+			>Recent</button>
+			<button
 				id="library-toggle"
 				class="app-button"
 				type="button"
@@ -172,6 +184,16 @@
 				data-default-label="Copy share link"
 				title="Copy a link to this computation that restores the current source"
 			>Copy share link</button>
+			<!-- Recents dropdown. Rendered by src/app.ts from the localStorage
+			     recents list. Absolutely positioned against the .actions
+			     block so it hangs below the Recent button. -->
+			<div
+				id="recents-panel"
+				class="recents-panel"
+				role="menu"
+				aria-labelledby="recents-toggle"
+				hidden
+			></div>
 		</div>
 	</header>
 

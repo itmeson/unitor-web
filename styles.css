@@ -471,3 +471,118 @@
 	outline: 2px solid var(--unitor-text-muted);
 	outline-offset: 1px;
 }
+
+/* ------------------------------------------------------------------
+   Recents dropdown — a small floating menu under the header's
+   "Recent" button that lists previously-visited Unitor URLs from
+   localStorage. Lets a student recover state after closing a tab
+   without bookmarking. DOM is produced by src/app.ts.
+   ------------------------------------------------------------------ */
+
+.recents-panel {
+	position: absolute;
+	top: calc(100% + 0.35rem);
+	right: 0;
+	min-width: 22rem;
+	max-width: 28rem;
+	max-height: 24rem;
+	overflow: auto;
+	background: var(--unitor-background-primary);
+	color: var(--unitor-text-normal);
+	border: 1px solid var(--unitor-background-modifier-border);
+	border-radius: 6px;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+	z-index: 10;
+}
+
+.recents-panel[hidden] {
+	display: none;
+}
+
+.recents-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	padding: 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--unitor-background-modifier-border);
+}
+
+.recents-title {
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--unitor-text-muted);
+}
+
+.recents-clear {
+	appearance: none;
+	border: 1px solid var(--unitor-background-modifier-border);
+	border-radius: 4px;
+	background: var(--unitor-background-secondary);
+	color: var(--unitor-text-normal);
+	font: inherit;
+	font-size: 0.78rem;
+	padding: 0.2rem 0.5rem;
+	cursor: pointer;
+}
+
+.recents-clear:hover {
+	background: var(--unitor-interactive-hover);
+}
+
+.recents-clear:focus-visible {
+	outline: 2px solid var(--unitor-text-muted);
+	outline-offset: 1px;
+}
+
+.recents-empty {
+	padding: 0.75rem;
+	font-size: 0.85rem;
+	color: var(--unitor-text-muted);
+	line-height: 1.4;
+}
+
+.recents-list {
+	list-style: none;
+	margin: 0;
+	padding: 0.25rem 0;
+}
+
+.recents-entry {
+	margin: 0;
+	padding: 0;
+}
+
+.recents-link {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 0.4rem 0.75rem;
+	text-decoration: none;
+	color: inherit;
+	transition: background 0.12s ease;
+}
+
+.recents-link:hover,
+.recents-link:focus-visible {
+	background: var(--unitor-interactive-hover);
+	outline: 0;
+}
+
+.recents-label {
+	min-width: 0;
+	flex: 1;
+	font-size: 0.9rem;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.recents-when {
+	flex: 0 0 auto;
+	font-size: 0.78rem;
+	color: var(--unitor-text-muted);
+	font-variant-numeric: tabular-nums;
+}

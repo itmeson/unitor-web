@@ -33,6 +33,14 @@ import {
 	removeMatching,
 	LibraryData,
 } from './library';
+import {
+	MAX_RECENTS,
+	RecentsData,
+	addRecent,
+	emptyRecents,
+	labelForUrl,
+	relativeTime,
+} from './recents';
 
 interface Case {
 	name: string;
@@ -642,6 +650,115 @@ test('library: decodeLibraryFromUrl accepts an empty library', () => {
 	const encoded = encodeLibraryForUrl(empty);
 	const decoded = decodeLibraryFromUrl(encoded);
 	assertEq(decoded, empty);
+});
+
+// ---------- recents ----------
+
+test('recents: addRecent prepends new URLs newest-first', () => {
+	let r: RecentsData = emptyRecents();
+	r = addRecent(r, '/?doc#a', 100);
+	r = addRecent(r, '/?doc#b', 200);
+	r = addRecent(r, '/?doc#c', 300);
+	assertEq(r.entries.map((e) => e.url), ['/?doc#c', '/?doc#b', '/?doc#a']);
+	assertEq(r.entries.map((e) => e.savedAt), [300, 200, 100]);
+});
+
+test('recents: addRecent dedups by exact URL and refreshes timestamp', () => {
+	let r: RecentsData = emptyRecents();
+	r = addRecent(r, '/?doc#a', 100);
+	r = addRecent(r, '/?doc#b', 200);
+	// Revisit A at a later time — A should move to the top with the new
+	// timestamp and there should still be only two entries.
+	r = addRecent(r, '/?doc#a', 300);
+	assertEq(r.entries.length, 2);
+	assertEq(r.entries.map((e) => e.url), ['/?doc#a', '/?doc#b']);
+	assertEq(r.entries[0]!.savedAt, 300);
+});
+
+test('recents: addRecent enforces MAX_RECENTS cap, oldest evicted', () => {
+	let r: RecentsData = emptyRecents();
+	for (let i = 0; i < MAX_RECENTS + 5; i++) {
+		r = addRecent(r, `/?doc#${i}`, i);
+	}
+	assertEq(r.entries.length, MAX_RECENTS);
+	// Newest-first: the last push (#24) is on top; the #0..#4 batch was evicted.
+	assertEq(r.entries[0]!.url, `/?doc#${MAX_RECENTS + 4}`);
+	assertEq(
+		r.entries[r.entries.length - 1]!.url,
+		`/?doc#${MAX_RECENTS + 5 - MAX_RECENTS}` // i.e. the oldest surviving
+	);
+});
+
+test('recents: addRecent ignores empty URLs', () => {
+	let r: RecentsData = emptyRecents();
+	r = addRecent(r, '', 100);
+	r = addRecent(r, '   ', 200);
+	assertEq(r.entries.length, 0);
+});
+
+test('recents: labelForUrl uses the first "# label" line from the source', () => {
+	// Hash carries the source; first # line wins even if non-label text appears above.
+	const src = encodeURIComponent('# mile-to-meter conversion\n30 mile/hr');
+	assertEq(labelForUrl(`/#${src}`), 'mile-to-meter conversion');
+});
+
+test('recents: labelForUrl falls back to the first non-empty source line', () => {
+	const src = encodeURIComponent('\n\n30 mile/hr\n1609 m / 1 mi');
+	assertEq(labelForUrl(`/#${src}`), '30 mile/hr');
+});
+
+test('recents: labelForUrl skips bare `#` with no text', () => {
+	const src = encodeURIComponent('#\n30 mile/hr');
+	assertEq(labelForUrl(`/#${src}`), '30 mile/hr');
+});
+
+test('recents: labelForUrl falls back to library-size hint when source is empty', () => {
+	const lib: LibraryData = addEntry(
+		addEntry(emptyLibrary(), { label: 'hr to s', source: '3600 s / 1 hr' }),
+		{ label: 'mi to m', source: '1609 m / 1 mi' }
+	);
+	const libEncoded = encodeURIComponent(encodeLibraryForUrl(lib));
+	assertEq(labelForUrl(`/?lib=${libEncoded}`), '2 factors');
+
+	const oneLib: LibraryData = addEntry(emptyLibrary(), {
+		label: 'hr to s',
+		source: '3600 s / 1 hr',
+	});
+	const oneEncoded = encodeURIComponent(encodeLibraryForUrl(oneLib));
+	assertEq(labelForUrl(`/?lib=${oneEncoded}`), '1 factor');
+});
+
+test('recents: labelForUrl handles the empty-calculator sentinel', () => {
+	assertEq(labelForUrl('/?doc'), '(empty calculator)');
+	assertEq(labelForUrl('/'), '(empty calculator)');
+});
+
+test('recents: labelForUrl returns "(invalid URL)" on malformed input', () => {
+	// `new URL` with the fake base rejects truly broken inputs.
+	assertEq(labelForUrl('http://['), '(invalid URL)');
+});
+
+test('recents: labelForUrl truncates very long labels', () => {
+	const long = 'a'.repeat(120);
+	const src = encodeURIComponent(`# ${long}`);
+	const out = labelForUrl(`/#${src}`);
+	// Truncate helper caps at 50 chars including the ellipsis.
+	assertEq(out.length <= 50, true, `expected <=50 chars, got ${out.length}`);
+	assertEq(out.endsWith('…'), true);
+});
+
+test('recents: relativeTime thresholds', () => {
+	const now = 1_700_000_000_000;
+	assertEq(relativeTime(now - 3_000, now), 'just now');
+	assertEq(relativeTime(now - 30_000, now), '30 seconds ago');
+	assertEq(relativeTime(now - 60_000, now), '1 minute ago');
+	assertEq(relativeTime(now - 5 * 60_000, now), '5 minutes ago');
+	assertEq(relativeTime(now - 60 * 60_000, now), '1 hour ago');
+	assertEq(relativeTime(now - 3 * 60 * 60_000, now), '3 hours ago');
+	assertEq(relativeTime(now - 24 * 60 * 60_000, now), 'yesterday');
+	assertEq(relativeTime(now - 3 * 24 * 60 * 60_000, now), '3 days ago');
+	// Future timestamps clamp to "just now" (never goes negative).
+	assertEq(relativeTime(now + 10_000, now), 'just now');
 });
 
 // ---------- expression evaluator ----------

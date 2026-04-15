@@ -6,12 +6,12 @@
  * palette renders them and inserts them back into the document; the
  * parser never looks at the library directly.
  *
- * The store is pure: no DOM, no globals besides `localStorage` which
- * is guarded. That keeps it easy to unit-test under node via the
- * harness, and means the same module can later back a UI prompt, a
- * URL-embedded library, or a future server sync.
+ * The store is pure: no DOM, no localStorage. The library travels with
+ * the document in the URL's `?lib=` query param and is exported /
+ * imported as JSON files; this module handles both wire formats plus
+ * the in-memory CRUD that the app and palette operate on.
  *
- * On-disk shape:
+ * Wire format (identical for URL and file export, modulo indentation):
  *
  *   {
  *     "version": 1,
@@ -26,7 +26,6 @@
  * crashing.
  */
 
-const STORAGE_KEY = 'unitor:library';
 const CURRENT_VERSION = 1;
 
 export interface LibraryEntry {
@@ -44,40 +43,6 @@ export interface LibraryData {
 /** A fresh, empty library. */
 export function emptyLibrary(): LibraryData {
 	return { version: CURRENT_VERSION, entries: [] };
-}
-
-/**
- * Load the library from localStorage. Returns an empty library on any
- * of: missing key, unreadable storage, malformed JSON, wrong schema,
- * or a future version we don't recognize. This keeps boot resilient.
- */
-export function loadLibrary(): LibraryData {
-	let raw: string | null = null;
-	try {
-		raw = localStorage.getItem(STORAGE_KEY);
-	} catch {
-		return emptyLibrary();
-	}
-	if (raw === null) return emptyLibrary();
-	try {
-		const parsed: unknown = JSON.parse(raw);
-		return coerceLibrary(parsed) ?? emptyLibrary();
-	} catch {
-		return emptyLibrary();
-	}
-}
-
-/**
- * Persist the library to localStorage. Swallows quota / disabled-
- * storage / private-mode errors; a missed write is non-fatal because
- * the in-memory state still drives the current session.
- */
-export function saveLibrary(data: LibraryData): void {
-	try {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-	} catch {
-		// ignore — private mode, quota, or disabled storage
-	}
 }
 
 /**
