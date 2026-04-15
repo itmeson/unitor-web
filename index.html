@@ -72,6 +72,11 @@
 			cursor: pointer;
 			transition: background 0.15s ease, color 0.15s ease;
 			white-space: nowrap;
+			/* Applies to the anchor-styled-as-button "Open in new tab"
+			   variant so it matches the real <button> siblings. */
+			text-decoration: none;
+			display: inline-flex;
+			align-items: center;
 		}
 
 		.app-button:hover {
@@ -184,6 +189,20 @@
 				data-default-label="Copy share link"
 				title="Copy a link to this computation that restores the current source"
 			>Copy share link</button>
+			<!-- Anchor-styled-as-button so native middle-click / cmd-click
+			     tab-management still works. href is kept in sync with the
+			     live URL by persistState in app.ts. Useful when Unitor is
+			     embedded in a Canvas iframe: "open full-window" gives the
+			     student more screen real estate and also restores a normal
+			     clipboard context. -->
+			<a
+				id="open-new-tab"
+				class="app-button"
+				href="#"
+				target="_blank"
+				rel="noopener"
+				title="Open this computation in a full browser tab"
+			>Open in new tab ↗</a>
 			<!-- Recents dropdown. Rendered by src/app.ts from the localStorage
 			     recents list. Absolutely positioned against the .actions
 			     block so it hangs below the Recent button. -->

@@ -190,18 +190,73 @@ function flashButton(btn: HTMLButtonElement, message: string): void {
 	}, FLASH_DURATION_MS);
 }
 
+/**
+ * Synchronous clipboard copy via the legacy `document.execCommand`
+ * API. Used as a fallback when `navigator.clipboard.writeText` is
+ * unavailable or rejects — the most common failure mode is Unitor
+ * being embedded in a Canvas iframe that doesn't grant
+ * `clipboard-write` via Permissions Policy, which silently denies
+ * the modern API. `execCommand('copy')` is deprecated but isn't
+ * gated by the same policy and still works in sandboxed iframes as
+ * long as it runs in response to a user gesture.
+ *
+ * Implementation: drop a 1px offscreen textarea with the URL,
+ * select it, fire `execCommand`, tear the textarea down. Returns
+ * whether the copy succeeded.
+ */
+function copyViaExecCommand(text: string): boolean {
+	const ta = document.createElement('textarea');
+	ta.value = text;
+	// Keep the textarea visible enough for the browser to consider it
+	// selectable, but positioned and sized so it never flashes visibly.
+	ta.setAttribute('readonly', '');
+	ta.style.position = 'fixed';
+	ta.style.top = '0';
+	ta.style.left = '0';
+	ta.style.width = '1px';
+	ta.style.height = '1px';
+	ta.style.opacity = '0';
+	ta.style.pointerEvents = 'none';
+	document.body.appendChild(ta);
+
+	// Preserve the caller's selection/focus — the textarea steals focus
+	// while selected, which we restore after the copy.
+	const previousActive = document.activeElement as HTMLElement | null;
+	ta.focus();
+	ta.select();
+	ta.setSelectionRange(0, text.length);
+
+	let ok = false;
+	try {
+		ok = document.execCommand('copy');
+	} catch {
+		ok = false;
+	}
+	document.body.removeChild(ta);
+	previousActive?.focus?.();
+	return ok;
+}
+
 async function copyShareLink(btn: HTMLButtonElement): Promise<void> {
 	const url = location.href;
-	if (!navigator.clipboard?.writeText) {
-		flashButton(btn, 'Copy unsupported — use address bar');
+	// Try the modern async API first. In a cross-origin iframe without
+	// `clipboard-write` in its Permissions Policy — e.g. a Canvas LTI
+	// embed — this rejects; we fall through to execCommand, which
+	// isn't gated by the policy.
+	if (navigator.clipboard?.writeText) {
+		try {
+			await navigator.clipboard.writeText(url);
+			flashButton(btn, 'Copied!');
+			return;
+		} catch {
+			// fall through to the legacy fallback
+		}
+	}
+	if (copyViaExecCommand(url)) {
+		flashButton(btn, 'Copied!');
 		return;
 	}
-	try {
-		await navigator.clipboard.writeText(url);
-		flashButton(btn, 'Copied!');
-	} catch {
-		flashButton(btn, 'Copy failed — use address bar');
-	}
+	flashButton(btn, 'Copy failed — use address bar');
 }
 
 /**
@@ -225,6 +280,7 @@ function boot(): void {
 	const textarea = $('source') as HTMLTextAreaElement;
 	const preview = $('preview');
 	const shareBtn = $('share-link') as HTMLButtonElement;
+	const openNewTabLink = $('open-new-tab') as HTMLAnchorElement;
 	const libraryBtn = $('library-toggle') as HTMLButtonElement;
 	const libraryPanel = $('library-panel');
 	const recentsBtn = $('recents-toggle') as HTMLButtonElement;
@@ -273,6 +329,12 @@ function boot(): void {
 	 */
 	function persistState(): void {
 		updateUrl(textarea.value, library);
+		// Keep the "Open in new tab" anchor's href in sync with the live
+		// URL so left-clicks, middle-clicks, and cmd-clicks all open the
+		// student's current state. Middle-click doesn't fire a `click`
+		// event, so a JS-only handler wouldn't catch it — we rely on the
+		// real `href` attribute instead.
+		openNewTabLink.href = location.href;
 		maybeRecordRecent();
 	}
 
@@ -552,6 +614,9 @@ function boot(): void {
 	// URL will now reflect the full resolved state. This does NOT count
 	// as an edit, so nothing hits recents yet.
 	updateUrl(textarea.value, library);
+	// Seed the "Open in new tab" anchor so it's clickable before the
+	// user makes any edits. persistState keeps it in sync afterward.
+	openNewTabLink.href = location.href;
 
 	textarea.addEventListener('input', () => {
 		hasEdited = true;
@@ -579,6 +644,9 @@ function boot(): void {
 		if (source === textarea.value) return;
 		textarea.value = source;
 		render(source);
+		// The user-facing URL just changed out from under us; keep the
+		// open-in-new-tab anchor pointed at it.
+		openNewTabLink.href = location.href;
 	});
 
 	// Final safety net for crash recovery. If the user has made edits but
