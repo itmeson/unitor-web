@@ -307,6 +307,8 @@ function boot(): void {
 	const libraryPanel = $('library-panel');
 	const recentsBtn = $('recents-toggle') as HTMLButtonElement;
 	const recentsPanel = $('recents-panel');
+	const menuToggle = $('menu-toggle') as HTMLButtonElement;
+	const headerActions = $('header-actions');
 	const workspace = document.querySelector('main.workspace') as HTMLElement;
 	const fileInput = $('library-file-input') as HTMLInputElement;
 
@@ -626,6 +628,30 @@ function boot(): void {
 			setRecentsOpen(false);
 			recentsBtn.focus();
 		}
+		if (ev.key === 'Escape' && headerActions.classList.contains('menu-open')) {
+			setMenuOpen(false);
+		}
+	});
+
+	// Mobile three-dots menu. Opens/closes the header actions as a
+	// dropdown on narrow screens. On wide screens the toggle button is
+	// hidden by CSS and the actions are always visible.
+	function setMenuOpen(open: boolean): void {
+		headerActions.classList.toggle('menu-open', open);
+		menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+	}
+
+	menuToggle.addEventListener('click', () => {
+		setMenuOpen(!headerActions.classList.contains('menu-open'));
+	});
+
+	document.addEventListener('click', (ev) => {
+		if (!headerActions.classList.contains('menu-open')) return;
+		const target = ev.target as Node | null;
+		if (target && (headerActions.contains(target) || menuToggle.contains(target))) {
+			return;
+		}
+		setMenuOpen(false);
 	});
 
 	textarea.value = initial.source;

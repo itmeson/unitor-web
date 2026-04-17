@@ -43,12 +43,7 @@
 			margin: 0;
 			font-size: 1.15rem;
 			font-weight: 600;
-		}
-
-		header p {
-			margin: 0.2rem 0 0;
-			font-size: 0.85rem;
-			color: var(--unitor-text-muted, #666);
+			cursor: default;
 		}
 
 		header .actions {
@@ -146,6 +141,34 @@
 			padding: 0.25rem 0.5rem;
 		}
 
+		/* Three-dots menu toggle — hidden on wide screens, shown on
+		   narrow screens where the action buttons would overlap the
+		   branding. */
+		.menu-toggle {
+			display: none;
+			appearance: none;
+			border: 1px solid var(--unitor-background-modifier-border, #ccc);
+			border-radius: 4px;
+			background: var(--unitor-background-secondary, #f6f6f6);
+			color: var(--unitor-text-normal, #222);
+			font-size: 1.2rem;
+			line-height: 1;
+			width: 2rem;
+			height: 2rem;
+			padding: 0;
+			cursor: pointer;
+			transition: background 0.15s ease;
+		}
+
+		.menu-toggle:hover {
+			background: var(--unitor-interactive-hover, #eaeaea);
+		}
+
+		.menu-toggle:focus-visible {
+			outline: 2px solid var(--unitor-text-muted, #888);
+			outline-offset: 1px;
+		}
+
 		@media (max-width: 720px) {
 			main.workspace,
 			main.workspace.library-open {
@@ -155,16 +178,89 @@
 			main.workspace.library-open {
 				grid-template-rows: minmax(160px, 1fr) 2fr auto;
 			}
+
+			/* Show the three-dots toggle, collapse actions into a
+			   dropdown anchored to the top-right of the header. */
+			.menu-toggle {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+			}
+
+			header .actions {
+				display: none;
+				position: absolute;
+				top: 100%;
+				right: 0;
+				flex-direction: column;
+				align-items: stretch;
+				gap: 0;
+				min-width: 12rem;
+				background: var(--unitor-background-primary, #fff);
+				border: 1px solid var(--unitor-background-modifier-border, #ddd);
+				border-radius: 6px;
+				box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+				padding: 0.35rem 0;
+				z-index: 20;
+			}
+
+			header .actions.menu-open {
+				display: flex;
+			}
+
+			/* Inside the mobile menu each action becomes a full-width
+			   row so it reads like a dropdown menu rather than tiny
+			   pills. */
+			header .actions .app-button {
+				border: 0;
+				border-radius: 0;
+				background: transparent;
+				padding: 0.55rem 0.9rem;
+				justify-content: flex-start;
+				font-size: 0.9rem;
+			}
+
+			header .actions .app-button:hover {
+				background: var(--unitor-interactive-hover, #eaeaea);
+			}
+
+			/* Recents dropdown inside the mobile menu needs to be
+			   relative-positioned rather than absolute so it doesn't
+			   float off-screen. */
+			header .actions .recents-panel {
+				position: static;
+				box-shadow: none;
+				border: 0;
+				border-top: 1px solid var(--unitor-background-modifier-border, #ddd);
+				border-radius: 0;
+				max-height: 16rem;
+			}
+
+			/* The header itself needs a positioning context for the
+			   actions dropdown. */
+			header {
+				position: relative;
+			}
 		}
 	</style>
 </head>
 <body>
 	<header>
 		<div class="branding">
-			<h1>Unitor</h1>
-			<p>"Unit-tutor" dimensional analysis tool</p>
+			<h1 title="&quot;Unit-tutor&quot; dimensional analysis tool">Unitor</h1>
 		</div>
-		<div class="actions">
+		<!-- Three-dots toggle: visible only on narrow screens, opens the
+		     actions group as a dropdown menu. -->
+		<button
+			id="menu-toggle"
+			class="menu-toggle"
+			type="button"
+			aria-controls="header-actions"
+			aria-expanded="false"
+			aria-label="Menu"
+			title="Menu"
+		>&#x22EE;</button>
+		<div class="actions" id="header-actions">
 			<button
 				id="recents-toggle"
 				class="app-button"
