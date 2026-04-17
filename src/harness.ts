@@ -41,6 +41,12 @@ import {
 	labelForUrl,
 	relativeTime,
 } from './recents';
+import {
+	encodeState,
+	decodeState,
+	toBase64url,
+	fromBase64url,
+} from './compress';
 
 interface Case {
 	name: string;
@@ -759,6 +765,117 @@ test('recents: relativeTime thresholds', () => {
 	assertEq(relativeTime(now - 3 * 24 * 60 * 60_000, now), '3 days ago');
 	// Future timestamps clamp to "just now" (never goes negative).
 	assertEq(relativeTime(now + 10_000, now), 'just now');
+});
+
+// ---------- compress ----------
+
+test('compress: base64url round-trips arbitrary bytes', () => {
+	const input = new Uint8Array([0, 1, 127, 128, 254, 255, 42]);
+	const encoded = toBase64url(input);
+	// base64url uses only [-_A-Za-z0-9], no + or / or =
+	assertEq(/^[A-Za-z0-9_-]+$/.test(encoded), true, 'should be url-safe chars');
+	const decoded = fromBase64url(encoded);
+	assertEq(decoded !== null, true, 'should decode');
+	assertEq(Array.from(decoded!), Array.from(input));
+});
+
+test('compress: fromBase64url returns null on invalid chars', () => {
+	assertEq(fromBase64url('!!!'), null);
+});
+
+test('compress: encodeState/decodeState round-trips source-only', () => {
+	const source = '30 mile/hr\n1609 m / 1 mi';
+	const lib = emptyLibrary();
+	const encoded = encodeState(source, lib);
+	assertEq(encoded !== null, true, 'should encode');
+	const decoded = decodeState(encoded!);
+	assertEq(decoded !== null, true, 'should decode');
+	assertEq(decoded!.source, source);
+	assertEq(decoded!.library.entries.length, 0);
+});
+
+test('compress: encodeState/decodeState round-trips library-only', () => {
+	const source = '';
+	const lib = addEntry(
+		addEntry(emptyLibrary(), { label: 'hr to s', source: '3600 s / 1 hr' }),
+		{ label: 'mi to m', source: '1609 m / 1 mi' }
+	);
+	const encoded = encodeState(source, lib);
+	assertEq(encoded !== null, true);
+	const decoded = decodeState(encoded!);
+	assertEq(decoded !== null, true);
+	assertEq(decoded!.source, '');
+	assertEq(decoded!.library.entries.length, 2);
+	assertEq(decoded!.library.entries[0]!.label, 'mi to m');
+});
+
+test('compress: encodeState/decodeState round-trips source + library', () => {
+	const source = '# speed\n30 mile/hr\n1609 m / 1 mi\n1 hr / 3600 s';
+	const lib = addEntry(
+		addEntry(emptyLibrary(), { label: 'hr to s', source: '3600 s / 1 hr' }),
+		{ label: 'mi to m', source: '1609 m / 1 mi' }
+	);
+	const encoded = encodeState(source, lib);
+	assertEq(encoded !== null, true);
+	const decoded = decodeState(encoded!);
+	assertEq(decoded !== null, true);
+	assertEq(decoded!.source, source);
+	assertEq(decoded!.library.entries.length, 2);
+});
+
+test('compress: encodeState returns null for empty state', () => {
+	assertEq(encodeState('', emptyLibrary()), null);
+});
+
+test('compress: decodeState returns null on garbage input', () => {
+	assertEq(decodeState('not-valid-compressed-data'), null);
+	assertEq(decodeState(''), null);
+});
+
+test('compress: compressed URL is shorter than legacy format', () => {
+	// Build a realistic payload and compare compressed vs legacy sizes.
+	const source = Array.from({ length: 15 }, (_, i) =>
+		`# factor ${i}\n${1000 + i} meters / 1 mile`
+	).join('\n');
+	const lib: LibraryData = {
+		version: 1,
+		entries: Array.from({ length: 10 }, (_, i) => ({
+			label: `conversion ${i}`,
+			source: `${1000 + i} meters / 1 mile`,
+		})),
+	};
+
+	const compressed = encodeState(source, lib);
+	assertEq(compressed !== null, true);
+
+	// Legacy format size: ?lib= + percent-encoded JSON + # + percent-encoded source
+	const legacyLib = '?lib=' + encodeURIComponent(encodeLibraryForUrl(lib));
+	const legacyHash = '#' + encodeURIComponent(source);
+	const legacyLen = legacyLib.length + legacyHash.length;
+
+	const compressedLen = ('?d=' + compressed!).length;
+
+	// Compressed should be meaningfully shorter. We expect roughly 3-4x
+	// improvement; assert at least 2x to avoid test brittleness.
+	assertEq(
+		compressedLen < legacyLen / 2,
+		true,
+		`compressed ${compressedLen} should be <50% of legacy ${legacyLen}`
+	);
+});
+
+test('compress: labelForUrl works on compressed ?d= URLs', () => {
+	const source = '# kinematics homework\n30 mile/hr';
+	const lib = emptyLibrary();
+	const encoded = encodeState(source, lib);
+	const url = `/?d=${encoded}`;
+	assertEq(labelForUrl(url), 'kinematics homework');
+});
+
+test('compress: labelForUrl still works on legacy ?lib=/#source URLs', () => {
+	// Ensure old recents entries still label correctly.
+	const src = encodeURIComponent('# old format test\n5 km');
+	assertEq(labelForUrl(`/#${src}`), 'old format test');
 });
 
 // ---------- expression evaluator ----------

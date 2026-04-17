@@ -2,8 +2,11 @@
  * Unitor web-app entry point.
  *
  * Persistence model: the URL is the sole source of truth for document
- * content. Source goes in the hash, library goes in `?lib=`, and a
- * `?doc` sentinel marks the intentionally-empty-calculator case.
+ * content. Source and library are deflate-compressed and base64url-
+ * encoded into a single `?d=` query parameter; a `?doc` sentinel
+ * marks the intentionally-empty-calculator case. Legacy URLs that
+ * use the old `?lib=` + `#source` format are still decoded on boot
+ * so previously-shared links keep working.
  * Every edit — typing, flipping, starring, palette add/delete/import —
  * writes the new state to the URL in place via `history.replaceState`.
  * localStorage never holds content, so there's no "accumulation"
@@ -38,13 +41,13 @@ import {
 	addEntry,
 	decodeLibraryFromUrl,
 	emptyLibrary,
-	encodeLibraryForUrl,
 	exportLibrary,
 	hasEntry,
 	importLibrary,
 	removeEntry,
 	removeMatching,
 } from './library';
+import { encodeState, decodeState } from './compress';
 import {
 	MAX_RECENTS,
 	RecentsData,
@@ -68,6 +71,8 @@ function $(id: string): HTMLElement {
 	return el;
 }
 
+// ---------- legacy URL helpers (pre-compression format) ----------
+
 /** Decode the current location.hash to a source string, or null if absent/malformed. */
 function decodeHash(): string | null {
 	if (location.hash.length <= 1) return null;
@@ -79,10 +84,10 @@ function decodeHash(): string | null {
 }
 
 /**
- * Read the library embedded in the current URL, if any. `null` means
- * no `?lib=` param was supplied; an empty library means the param was
- * present but malformed (we swallow the error so a corrupt URL can't
- * brick the page).
+ * Read the library embedded in the current URL's `?lib=` param. Used
+ * only for legacy URL support — new URLs use `?d=` instead. Returns
+ * `null` when the param is absent; returns an empty library when it's
+ * present but malformed, so a corrupt URL can't brick the page.
  */
 function decodeLibraryFromQuery(): LibraryData | null {
 	const params = new URLSearchParams(location.search);
@@ -93,15 +98,13 @@ function decodeLibraryFromQuery(): LibraryData | null {
 
 /**
  * Does the URL carry any state? Exposed on the dev handle for
- * debugging — no longer used by boot (a bare URL is now just an empty
- * calculator, same as any other empty state). Keeps three signals in
- * mind: a non-empty `#source` fragment, a `?lib=…` query, or a `?doc`
- * sentinel.
+ * debugging. Recognises both the new compressed `?d=` format and the
+ * legacy `?lib=` + `#source` format, plus the `?doc` empty sentinel.
  */
 function urlHasState(): boolean {
 	if (location.hash.length > 1) return true;
 	const params = new URLSearchParams(location.search);
-	return params.has('lib') || params.has('doc');
+	return params.has('d') || params.has('lib') || params.has('doc');
 }
 
 /** Remember whether the library panel was open across reloads. Failures are non-fatal. */
@@ -127,44 +130,63 @@ interface InitialState {
 }
 
 /**
- * Resolve the initial state from the URL. A bare URL produces a blank
- * calculator so the user can just start typing; there is no built-in
- * demo block. Tutorial pages (if we want them) are just separate URLs
- * shipped with a non-empty `#source`.
+ * Resolve the initial state from the URL. Priority:
+ *  1. `?d=` — new compressed format (deflate + base64url).
+ *  2. `?lib=` + `#source` — legacy uncompressed format; kept so
+ *     previously-shared links work forever.
+ *  3. Bare URL — empty calculator.
+ *
+ * Tutorial pages are just separate URLs with a non-empty payload.
  */
 function loadInitialState(): InitialState {
-	return {
-		source: decodeHash() ?? '',
-		library: decodeLibraryFromQuery() ?? emptyLibrary(),
-	};
+	const params = new URLSearchParams(location.search);
+
+	// New compressed format.
+	const d = params.get('d');
+	if (d !== null) {
+		const decoded = decodeState(d);
+		if (decoded) return decoded;
+		// Corrupt ?d= — fall through to legacy / empty.
+	}
+
+	// Legacy uncompressed format.
+	const hasLegacy =
+		location.hash.length > 1 || params.has('lib') || params.has('doc');
+	if (hasLegacy) {
+		return {
+			source: decodeHash() ?? '',
+			library: decodeLibraryFromQuery() ?? emptyLibrary(),
+		};
+	}
+
+	// Bare URL — empty calculator.
+	return { source: '', library: emptyLibrary() };
 }
 
 /**
  * Replace the current URL with one encoding the given source and
- * library. The query param is omitted entirely when the library is
- * empty, so a bare session doesn't carry a dangling `?lib=%7B…%7D` in
- * the address bar.
+ * library. Uses the compressed `?d=` format which is typically 3–4×
+ * shorter than the legacy percent-encoded representation.
  *
- * If source AND library are both empty we emit a `?doc` sentinel so a
+ * If source AND library are both empty, emits a `?doc` sentinel so a
  * shared "blank calculator" link stays blank on reload instead of
- * reverting to the default demo block.
+ * reverting to the default (bare URL = empty calculator).
  *
  * Swallows errors from exotic hosts or over-long URLs: a failed URL
  * write is non-fatal because in-memory state survives for the tab's
  * lifetime.
  */
 function updateUrl(source: string, library: LibraryData): void {
-	const libPresent = library.entries.length > 0;
-	const sourcePresent = source.length > 0;
+	const encoded = encodeState(source, library);
 
-	const params = new URLSearchParams();
-	if (libPresent) params.set('lib', encodeLibraryForUrl(library));
-	if (!libPresent && !sourcePresent) params.set('doc', '');
-
-	let target = location.pathname;
-	const qs = params.toString();
-	if (qs.length > 0) target += '?' + qs;
-	target += '#' + encodeURIComponent(source);
+	let target: string;
+	if (encoded !== null) {
+		// Normal case: source and/or library are non-empty.
+		target = location.pathname + '?d=' + encoded;
+	} else {
+		// Fully empty state — use the sentinel.
+		target = location.pathname + '?doc';
+	}
 
 	const current = location.pathname + location.search + location.hash;
 	if (current === target) return;
@@ -628,16 +650,11 @@ function boot(): void {
 		void copyShareLink(shareBtn);
 	});
 
-	// External hash changes (address-bar edits, back/forward, paste-and-go
-	// in the same tab). history.replaceState does not trigger hashchange
-	// so this only fires for genuinely external edits. We re-sync the
-	// textarea and preview to the new hash.
-	//
-	// We intentionally do NOT re-read `?lib=` here: hashchange doesn't
-	// fire on query-only changes, and a teacher link opened in a fresh
-	// tab goes through boot() which handles both. Mixing the two would
-	// surprise users by blowing away in-session library mutations when
-	// they tweak the hash externally.
+	// External hash changes. New compressed URLs don't use the hash, but
+	// a user who pastes a legacy `#source` URL into the address bar of
+	// the same tab will fire hashchange, so we keep this handler for
+	// backward compat. history.replaceState does not trigger hashchange,
+	// so this only fires for genuinely external edits.
 	window.addEventListener('hashchange', () => {
 		const source = decodeHash();
 		if (source === null) return;

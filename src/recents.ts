@@ -27,6 +27,7 @@
  */
 
 import { decodeLibraryFromUrl } from './library';
+import { decodeState } from './compress';
 
 const STORAGE_KEY = 'unitor:recents';
 const CURRENT_VERSION = 1;
@@ -123,28 +124,42 @@ export function clearRecents(): RecentsData {
  *     only a library and no source.
  *  4. Otherwise "(empty calculator)" for the fully-empty sentinel case.
  *
- * Parses the URL relative to a fake origin so this works on both
- * absolute and relative URL strings, and tolerates any malformed
- * input by falling back to a generic label.
+ * Handles both the new compressed `?d=` format and the legacy
+ * `?lib=` + `#source` format, so old recents entries still label
+ * correctly. Parses the URL relative to a fake origin so this works
+ * on both absolute and relative URL strings, and tolerates any
+ * malformed input by falling back to a generic label.
  */
 export function labelForUrl(url: string): string {
 	let source = '';
 	let libCount = 0;
 	try {
 		// The fake base is only used so `new URL` accepts a relative
-		// "/?lib=…#…" string. The hostname it picks is discarded.
+		// "/?d=…" or "/?lib=…#…" string.
 		const parsed = new URL(url, 'https://example.invalid');
-		if (parsed.hash.length > 1) {
-			try {
-				source = decodeURIComponent(parsed.hash.slice(1));
-			} catch {
-				source = '';
+
+		// Try the new compressed format first.
+		const d = parsed.searchParams.get('d');
+		if (d !== null) {
+			const decoded = decodeState(d);
+			if (decoded) {
+				source = decoded.source;
+				libCount = decoded.library.entries.length;
 			}
-		}
-		const libRaw = parsed.searchParams.get('lib');
-		if (libRaw !== null) {
-			const lib = decodeLibraryFromUrl(libRaw);
-			if (lib) libCount = lib.entries.length;
+		} else {
+			// Legacy format: source in hash, library in ?lib=.
+			if (parsed.hash.length > 1) {
+				try {
+					source = decodeURIComponent(parsed.hash.slice(1));
+				} catch {
+					source = '';
+				}
+			}
+			const libRaw = parsed.searchParams.get('lib');
+			if (libRaw !== null) {
+				const lib = decodeLibraryFromUrl(libRaw);
+				if (lib) libCount = lib.entries.length;
+			}
 		}
 	} catch {
 		return '(invalid URL)';

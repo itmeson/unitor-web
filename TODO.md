@@ -53,12 +53,21 @@
   fallbacks.
 - URL-as-sole-state persistence: localStorage no longer holds
   document content. Every edit updates the URL in place via
-  `history.replaceState`; the library travels in `?lib=`; an empty
-  calculator is marked with a `?doc` sentinel so a shared blank
-  state round-trips. This eliminates the accumulation pattern (the
-  student's prior state can't leak into a teacher-shared link) and
-  makes the tool behave the same in normal, private, and incognito
-  tabs.
+  `history.replaceState`; an empty calculator is marked with a
+  `?doc` sentinel so a shared blank state round-trips. This
+  eliminates the accumulation pattern (the student's prior state
+  can't leak into a teacher-shared link) and makes the tool behave
+  the same in normal, private, and incognito tabs.
+- Compressed URL encoding (`src/compress.ts`): source and library
+  are concatenated with a NUL separator, deflated via pako (raw
+  deflate, no headers), and base64url-encoded into a single `?d=`
+  query parameter. Typically 3–4× shorter than the legacy
+  `?lib=` + `#source` percent-encoded format, bringing a 20-line
+  source + 20-factor library well under the ~2 KB LMS/email URL
+  limit. Legacy URLs (`?lib=`/`#source`) are still decoded on boot
+  so previously-shared links work forever. Harness covers
+  encode/decode round-trips, empty-state handling, garbage-input
+  rejection, and a size-improvement assertion.
 - Recents list for crash recovery: localStorage keeps a small
   (`MAX_RECENTS = 20`) list of URLs the user has edited under
   `unitor:recents`. Writes are throttled to once every two minutes
@@ -188,28 +197,29 @@ Follow-ups deferred:
 - Cross-device sync / shared class libraries.
 
 ### URL-as-sole-state persistence — status
-The URL is the single source of truth for document content: source
-lives in the hash, library lives in `?lib=`, and a `?doc` sentinel
-marks the intentionally-empty-calculator case so a shared blank
-link round-trips instead of reverting to the built-in demo block.
-Every edit (typing, flip, star, palette add/delete/import/export)
-writes the new state to the URL in place via `history.replaceState`.
+The URL is the single source of truth for document content. Source
+and library are deflate-compressed and base64url-encoded into a
+single `?d=` query parameter (`src/compress.ts`). A `?doc` sentinel
+marks the intentionally-empty-calculator case so a shared blank link
+round-trips instead of reverting to the bare-URL default. Every edit
+(typing, flip, star, palette add/delete/import/export) writes the
+new state to the URL in place via `history.replaceState`.
 localStorage never holds content.
 
-On boot, we simply read whatever's in the URL: hash becomes the
-source, `?lib=` becomes the library, missing pieces are just empty.
-A bare URL is therefore a blank calculator — no built-in demo — so
-opening a fresh tab to start fresh behaves the way you'd expect
-without surprising "where did this text come from?" moments. The
-`hashchange` listener re-syncs the textarea on external address-bar
-edits but deliberately does not re-read `?lib=`, because browsers
-don't fire a standard event on query-only changes and re-reading
-there would surprise users by wiping in-session library edits.
+On boot, priority is: `?d=` (new compressed) → `?lib=` + `#source`
+(legacy uncompressed, for backward compat) → bare URL (empty
+calculator). Legacy URLs work forever; newly generated URLs always
+use `?d=`. The `hashchange` listener re-syncs the textarea on
+external address-bar edits (relevant for legacy URLs) but does not
+re-read `?lib=`.
 
-`encodeLibraryForUrl` emits compact (unindented) JSON to keep URLs
-short enough for LMS / email transport; `exportLibrary` stays
-pretty-printed for file downloads. Malformed `?lib=` values fall
-back to an empty library rather than crashing the page.
+The compressed format concatenates source and library JSON with a
+NUL separator, runs raw deflate via pako, and base64url-encodes the
+result. Typical compression ratio is 3–4× vs. the legacy format; a
+20-line source + 20-factor library comes in around 800 bytes instead
+of 3 KB. `exportLibrary` stays pretty-printed for JSON file
+downloads. Malformed `?d=` or `?lib=` values fall back to an empty
+state rather than crashing the page.
 
 The trade-off for URL-as-sole-state — close a tab without
 bookmarking and your work is gone — is softened by the recents list
@@ -244,10 +254,14 @@ A dev handle is exposed on `window.unitor` for console inspection:
 Harmless and useful for triaging reports about surprising state.
 
 Follow-ups deferred:
-- URL length mitigation (compression / short-link service) if
-  real-world libraries get too big for some LMS URL limits. Current
-  compact JSON encoding is probably enough for classroom-sized
-  libraries.
+- URL length mitigation beyond compression (short-link service) if
+  real-world libraries exceed even the compressed URL's headroom.
+  Current deflate + base64url encoding is probably enough for
+  classroom-sized libraries (~40 factors + 30 lines stays under 2 KB).
+- Full-document export/import (source + library in one `.json` or
+  `.unitor` file) as an escape valve for very large factor sets that
+  don't fit in a URL. Teachers would distribute a file instead of a
+  link.
 - A "pin" affordance for recents entries the student wants to keep
   around even as older work pushes newer items off the list.
 - Cross-device sync for recents (e.g., behind a login). Probably
