@@ -32,8 +32,10 @@ answer filled in. The `#` lines label the first and last cards.
 
 ## Input syntax
 
-A **block** is the text in the textarea. Each non-empty, non-comment line
-is a factor (one card); the result card is computed automatically.
+Each non-empty, non-comment line is a factor (one card); the result card
+is computed automatically. `---` lines or two or more consecutive blank
+lines split the textarea into independent blocks, each with its own
+result card.
 
 - **Basic quantity:** `5 km`, `9.8 m/s^2`, `0.5 kg*m^2/s^2`. `*` is
   unit-level multiplication, `/` (with no spaces) is unit-level division.
@@ -48,7 +50,7 @@ is a factor (one card); the result card is computed automatically.
 - **Bare dimensionless numerators:** `1 / 5 km` is valid — the numerator
   is just `1`.
 - **Labels:** a `# label` line immediately before a factor attaches a
-  caption above that card. A trailing `# label` at the end of the block
+  caption above that card. A trailing `# label` at the end of a block
   (with no factor after it) labels the result card.
 
 Parse errors are reported per-line below the preview; one bad line
@@ -57,22 +59,45 @@ doesn't break the rest of the block.
 ## Interactive features
 
 - **Live preview.** Every keystroke re-renders.
+- **Multi-block documents.** `---` or 2+ blank lines split the textarea
+  into independent blocks, each rendered with its own result card and a
+  thin separator between them.
 - **Cancellation.** Matching unit slots between adjacent cards are struck
   through in a color unique to that pair (8-color palette, cycles if
   there are more than 8 pairs).
 - **Flip buttons (⇅).** Each factor card has a small flip button that
   swaps its numerator and denominator and rewrites the corresponding
-  source line. Useful when a student sets up a chain, sees units don't
-  cancel the way they expected, and flips a card to fix it.
-- **Persistent session.** The textarea content is saved to
-  `localStorage`, so reopening the page restores your last block.
-- **Shareable URLs.** The textarea content is also encoded in the URL
-  hash. The "Copy share link" button in the header copies the current
-  URL; pasting it into another browser loads the same block. If you
-  edit the URL hash directly, the page updates to match.
+  source line.
+- **Copy buttons (⧉).** Each card has a copy button that inserts the
+  card's source at the textarea cursor. Result cards synthesize a
+  parseable factor line from the rounded value and residual units.
+- **Star buttons (☆/★).** Toggle a factor into/out of the library
+  palette. Unlabeled cards prompt for a label first.
+- **Library palette.** A side panel (toggled from the header) listing
+  saved conversion factors. Click a row to insert it at the cursor.
+  Import/export as JSON files, so teachers can distribute curated factor
+  sets and students can build their own over time.
+- **Shareable URLs.** Source and library are deflate-compressed and
+  base64url-encoded into a `?d=` query parameter. The "Copy share link"
+  button copies the current URL; anyone who opens it sees the same
+  source and library. A clipboard fallback via `document.execCommand`
+  handles Canvas/LMS iframe embeds where the modern Clipboard API is
+  blocked by Permissions Policy. Legacy URLs using the older `?lib=` +
+  `#source` format are still decoded on boot.
+- **Open in new tab.** A header link that opens the current state in a
+  full browser tab — useful when Unitor is embedded in a Canvas iframe.
+- **Recents.** A header dropdown listing the last 20 URLs the user has
+  edited, stored in `localStorage` under `unitor:recents`. Writes are
+  throttled (every 2 minutes + a `beforeunload` flush) so closing a tab
+  without bookmarking still leaves a recoverable snapshot. Each entry is
+  labelled by the document's first `#label` line.
+- **Mobile menu.** On narrow screens the header actions collapse behind
+  a `⋮` button to avoid overlapping the branding.
 
-The priority on load is URL hash → localStorage → a small default block,
-so a shared link always wins over a saved session.
+The URL is the sole source of truth for document content. A bare URL is
+a blank calculator; there is no default demo block. `localStorage` is
+used only for the recents list and the library-panel open/closed
+preference.
 
 ## Running locally
 
@@ -92,8 +117,8 @@ Other scripts:
 - `npm run build` — type-check and produce a production bundle in
   `dist/app.js`.
 - `npm run typecheck` — TypeScript check only, no emit.
-- `npm run test` — run the parser/compute/format harness in
-  `src/harness.ts`.
+- `npm run test` — run the parser/compute/format/library/recents/compress
+  harness in `src/harness.ts`.
 - `npm run lint` — ESLint.
 
 ## Deploying
@@ -105,24 +130,36 @@ Any static host will serve it. There is no backend.
 
 ```
 src/
-  app.ts         — entry point: DOM wiring, persistence, flip/share UI
+  app.ts         — entry point: DOM wiring, persistence, flip/copy/star/
+                   share/recents UI, mobile menu toggle
   render.ts      — DOM renderer (pure function of source string)
-  parser.ts      — parseBlock, parseLine, parseUnitExpression, flipLine
+  parser.ts      — parseBlock, parseDocument, parseLine,
+                   parseUnitExpression, flipLine
   compute.ts     — slot-based cancellation with pair IDs
-  format.ts      — formatResultValue, superscript, prettyPrintExpression
+  format.ts      — formatResultValue, superscript, prettyPrintExpression,
+                   serializeResultAsFactorLine
   expression.ts  — recursive-descent evaluator for backtick expressions
-  harness.ts     — test harness
+  library.ts     — pure in-memory library store (add, remove, has,
+                   import/export, URL encode/decode)
+  palette.ts     — DOM renderer for the library side panel
+  recents.ts     — localStorage-backed recent-URLs list with labels and
+                   relative-time formatting
+  compress.ts    — deflate + base64url encoding for URL state
+  harness.ts     — test harness (73 tests)
 scripts/
   run-harness.mjs — bundles src/harness.ts and runs it under node
-index.html       — two-pane layout: source textarea left, preview right
-styles.css       — self-contained CSS custom properties with dark-mode
+index.html       — app shell: header, two-pane layout, library panel,
+                   mobile menu styles
+styles.css       — card rendering, library palette, recents dropdown;
+                   self-contained CSS custom properties with dark-mode
                    override via prefers-color-scheme
 esbuild.config.mjs — dev server + production bundler
 ```
 
-`parser.ts`, `compute.ts`, `format.ts`, and `expression.ts` have zero DOM
-or browser dependencies and can be run in Node directly. `render.ts` and
-`app.ts` are the only files that touch the DOM.
+`parser.ts`, `compute.ts`, `format.ts`, `expression.ts`, `library.ts`,
+`recents.ts`, and `compress.ts` have zero DOM or browser dependencies
+and can be run in Node directly. `render.ts`, `palette.ts`, and `app.ts`
+are the files that touch the DOM.
 
 ## Author
 
