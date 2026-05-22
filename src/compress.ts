@@ -35,9 +35,13 @@ import {
 /** The separator between source and library JSON in the raw payload. */
 const SEP = '\0';
 
+/** Default significant figures for result display. */
+export const DEFAULT_SIG_FIGS = 3;
+
 export interface DocumentState {
 	source: string;
 	library: LibraryData;
+	sigFigs: number;
 }
 
 // ---------- base64url helpers ----------
@@ -105,31 +109,55 @@ export function fromBase64url(s: string): Uint8Array | null {
 // ---------- encode / decode ----------
 
 /**
- * Encode a document state (source + library) into a compact string
- * suitable for a URL query parameter. The output is deflated +
+ * Encode a document state (source + library + options) into a compact
+ * string suitable for a URL query parameter. The output is deflated +
  * base64url, so it's URL-safe without further percent-encoding.
  *
- * Returns `null` if both source and library are empty — the caller
- * should emit `?doc` instead for that case.
+ * Format: `source \0 libraryJSON \0 optionsJSON`
+ * The third segment (options) is omitted when all options are at their
+ * defaults, so URLs stay short for the common case and old URLs (which
+ * have only one NUL) decode fine with defaults applied.
+ *
+ * Returns `null` if both source and library are empty and sigFigs is
+ * at the default — the caller should emit `?doc` instead.
  */
-export function encodeState(source: string, library: LibraryData): string | null {
+export function encodeState(
+	source: string,
+	library: LibraryData,
+	sigFigs: number = DEFAULT_SIG_FIGS
+): string | null {
 	const libJson = library.entries.length > 0
 		? encodeLibraryForUrl(library)
 		: '';
 
-	if (source.length === 0 && libJson.length === 0) return null;
+	// Only emit options segment when non-default values are present.
+	const hasNonDefaultOptions = sigFigs !== DEFAULT_SIG_FIGS;
+	const optionsJson = hasNonDefaultOptions
+		? JSON.stringify({ sigFigs })
+		: '';
 
-	const payload = source + SEP + libJson;
+	if (source.length === 0 && libJson.length === 0 && !hasNonDefaultOptions) {
+		return null;
+	}
+
+	let payload = source + SEP + libJson;
+	if (optionsJson) {
+		payload += SEP + optionsJson;
+	}
 	const raw = new TextEncoder().encode(payload);
 	const compressed = deflateRaw(raw);
 	return toBase64url(compressed);
 }
 
 /**
- * Decode a `?d=` value back into source + library. Returns `null` on
- * any failure: bad base64, corrupt deflate stream, missing separator,
- * or malformed library JSON. The caller falls back to an empty
- * calculator.
+ * Decode a `?d=` value back into source + library + options. Returns
+ * `null` on any failure: bad base64, corrupt deflate stream, missing
+ * separator, or malformed library JSON. The caller falls back to an
+ * empty calculator.
+ *
+ * Backward compatible: URLs encoded before the options segment was
+ * added contain only one NUL; the decoder treats the missing third
+ * segment as "all defaults."
  */
 export function decodeState(encoded: string): DocumentState | null {
 	try {
@@ -137,11 +165,17 @@ export function decodeState(encoded: string): DocumentState | null {
 		if (!bytes) return null;
 		const inflated = inflateRaw(bytes);
 		const payload = new TextDecoder().decode(inflated);
-		const sepIdx = payload.indexOf(SEP);
-		if (sepIdx === -1) return null;
+		const firstSep = payload.indexOf(SEP);
+		if (firstSep === -1) return null;
 
-		const source = payload.slice(0, sepIdx);
-		const libJson = payload.slice(sepIdx + 1);
+		const source = payload.slice(0, firstSep);
+
+		// Find second separator (options segment). May not exist in
+		// older URLs.
+		const secondSep = payload.indexOf(SEP, firstSep + 1);
+		const libJson = secondSep === -1
+			? payload.slice(firstSep + 1)
+			: payload.slice(firstSep + 1, secondSep);
 
 		let library: LibraryData;
 		if (libJson.length === 0) {
@@ -150,7 +184,22 @@ export function decodeState(encoded: string): DocumentState | null {
 			library = decodeLibraryFromUrl(libJson) ?? emptyLibrary();
 		}
 
-		return { source, library };
+		let sigFigs = DEFAULT_SIG_FIGS;
+		if (secondSep !== -1) {
+			const optionsJson = payload.slice(secondSep + 1);
+			if (optionsJson.length > 0) {
+				try {
+					const opts = JSON.parse(optionsJson);
+					if (typeof opts.sigFigs === 'number' && opts.sigFigs >= 1 && opts.sigFigs <= 10) {
+						sigFigs = opts.sigFigs;
+					}
+				} catch {
+					// Malformed options — use defaults.
+				}
+			}
+		}
+
+		return { source, library, sigFigs };
 	} catch {
 		return null;
 	}

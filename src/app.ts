@@ -47,7 +47,7 @@ import {
 	removeEntry,
 	removeMatching,
 } from './library';
-import { encodeState, decodeState } from './compress';
+import { encodeState, decodeState, DEFAULT_SIG_FIGS } from './compress';
 import {
 	MAX_RECENTS,
 	RecentsData,
@@ -127,6 +127,7 @@ function writePanelOpen(open: boolean): void {
 interface InitialState {
 	source: string;
 	library: LibraryData;
+	sigFigs: number;
 }
 
 /**
@@ -156,11 +157,12 @@ function loadInitialState(): InitialState {
 		return {
 			source: decodeHash() ?? '',
 			library: decodeLibraryFromQuery() ?? emptyLibrary(),
+			sigFigs: DEFAULT_SIG_FIGS,
 		};
 	}
 
 	// Bare URL — empty calculator.
-	return { source: '', library: emptyLibrary() };
+	return { source: '', library: emptyLibrary(), sigFigs: DEFAULT_SIG_FIGS };
 }
 
 /**
@@ -176,8 +178,8 @@ function loadInitialState(): InitialState {
  * write is non-fatal because in-memory state survives for the tab's
  * lifetime.
  */
-function updateUrl(source: string, library: LibraryData): void {
-	const encoded = encodeState(source, library);
+function updateUrl(source: string, library: LibraryData, sigFigs: number = DEFAULT_SIG_FIGS): void {
+	const encoded = encodeState(source, library, sigFigs);
 
 	let target: string;
 	if (encoded !== null) {
@@ -311,12 +313,14 @@ function boot(): void {
 	const headerActions = $('header-actions');
 	const workspace = document.querySelector('main.workspace') as HTMLElement;
 	const fileInput = $('library-file-input') as HTMLInputElement;
+	const sigFigsInput = $('sigfigs-input') as HTMLInputElement;
 
 	const initial = loadInitialState();
 	// In-memory mirror of the library. All mutations produce a new value
 	// (`addEntry`/`removeEntry` are pure), which we then persist and
 	// re-render.
 	let library: LibraryData = initial.library;
+	let sigFigs: number = initial.sigFigs;
 
 	// Recents bookkeeping. We only start recording after the user makes
 	// their first edit in this session — otherwise a student who opens a
@@ -352,7 +356,7 @@ function boot(): void {
 	 * what provides crash-recovery for unsaved work.
 	 */
 	function persistState(): void {
-		updateUrl(textarea.value, library);
+		updateUrl(textarea.value, library, sigFigs);
 		// Keep the "Open in new tab" anchor's href in sync with the live
 		// URL so left-clicks, middle-clicks, and cmd-clicks all open the
 		// student's current state. Middle-click doesn't fire a `click`
@@ -401,6 +405,7 @@ function boot(): void {
 			onSave: handleSave,
 			isSaved: (rawLine, label) =>
 				label !== undefined && hasEntry(library, label, rawLine),
+			sigFigs,
 		};
 		renderDocument(source, preview, callbacks);
 	}
@@ -655,13 +660,14 @@ function boot(): void {
 	});
 
 	textarea.value = initial.source;
+	sigFigsInput.value = String(sigFigs);
 	render(initial.source);
 	rerenderPalette();
 	setPanelOpen(readPanelOpen());
 	// Normalize the URL on load. If we arrived with partial state, the
 	// URL will now reflect the full resolved state. This does NOT count
 	// as an edit, so nothing hits recents yet.
-	updateUrl(textarea.value, library);
+	updateUrl(textarea.value, library, sigFigs);
 	// Seed the "Open in new tab" anchor so it's clickable before the
 	// user makes any edits. persistState keeps it in sync afterward.
 	openNewTabLink.href = location.href;
@@ -671,6 +677,16 @@ function boot(): void {
 		persistState();
 		render(textarea.value);
 	});
+
+	sigFigsInput.addEventListener('input', () => {
+		const n = parseInt(sigFigsInput.value, 10);
+		if (!Number.isFinite(n) || n < 1 || n > 10) return;
+		sigFigs = n;
+		hasEdited = true;
+		persistState();
+		render(textarea.value);
+	});
+
 
 	shareBtn.addEventListener('click', () => {
 		void copyShareLink(shareBtn);
@@ -718,6 +734,7 @@ function boot(): void {
 		get source() { return textarea.value; },
 		get recents() { return recents; },
 		get hasEdited() { return hasEdited; },
+		get sigFigs() { return sigFigs; },
 		urlHasState,
 		MAX_RECENTS,
 	};

@@ -41,13 +41,14 @@ export function roundToSigFigs(value: number, sig: number): number {
 }
 
 /**
- * Format a computed result value: round to 3 sig figs, then render
- * either as a plain decimal (when the magnitude is comfortable to
- * read) or in scientific notation with a superscript exponent.
+ * Format a computed result value: round to `sigFigs` significant
+ * figures, then render either as a plain decimal (when the magnitude
+ * is comfortable to read) or in scientific notation with a
+ * superscript exponent.
  */
-export function formatResultValue(value: number): string {
+export function formatResultValue(value: number, sigFigs: number = 3): string {
 	if (!Number.isFinite(value)) return String(value);
-	const rounded = roundToSigFigs(value, 3);
+	const rounded = roundToSigFigs(value, sigFigs);
 	if (rounded === 0) return '0';
 
 	const abs = Math.abs(rounded);
@@ -60,14 +61,14 @@ export function formatResultValue(value: number): string {
 	const exp = Math.floor(Math.log10(abs));
 	const mantissa = rounded / Math.pow(10, exp);
 	// Strip trailing zeros from mantissa (e.g. "3.00" -> "3").
-	const mantStr = String(Number(mantissa.toPrecision(3)));
+	const mantStr = String(Number(mantissa.toPrecision(sigFigs)));
 	return `${mantStr} × 10${superscript(exp)}`;
 }
 
 /**
  * Format a computed result value as machine-parseable source text.
  *
- * Like `formatResultValue`, this rounds to 3 sig figs. Unlike it, the
+ * Like `formatResultValue`, this rounds to `sigFigs` sig figs. Unlike it, the
  * scientific form uses `<mant>*10^<exp>` rather than the Unicode-
  * superscript `<mant> × 10ⁿ` form, so the emitted string parses
  * cleanly via `parseBlock` and the resulting factor's displayValue is
@@ -76,9 +77,9 @@ export function formatResultValue(value: number): string {
  * Used by the "copy card" feature to turn a result-card value back
  * into a factor line the student can insert into a new block.
  */
-export function serializeResultValue(value: number): string {
+export function serializeResultValue(value: number, sigFigs: number = 3): string {
 	if (!Number.isFinite(value)) return String(value);
-	const rounded = roundToSigFigs(value, 3);
+	const rounded = roundToSigFigs(value, sigFigs);
 	if (rounded === 0) return '0';
 
 	const abs = Math.abs(rounded);
@@ -88,7 +89,7 @@ export function serializeResultValue(value: number): string {
 
 	const exp = Math.floor(Math.log10(abs));
 	const mantissa = rounded / Math.pow(10, exp);
-	const mantStr = String(Number(mantissa.toPrecision(3)));
+	const mantStr = String(Number(mantissa.toPrecision(sigFigs)));
 	return `${mantStr}*10^${exp}`;
 }
 
@@ -136,9 +137,10 @@ export function serializeUnits(units: UnitTerm[]): string {
  */
 export function serializeResultAsFactorLine(
 	value: number,
-	units: UnitTerm[]
+	units: UnitTerm[],
+	sigFigs: number = 3
 ): string {
-	const v = serializeResultValue(value);
+	const v = serializeResultValue(value, sigFigs);
 	const u = serializeUnits(units);
 	return u ? `${v} ${u}` : v;
 }

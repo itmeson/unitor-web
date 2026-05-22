@@ -78,6 +78,13 @@
   line, then a library-size hint, then "(empty calculator)") and its
   save time relative to now. Harness covers dedup, cap, label
   priority, empty-URL refusal, and relative-time thresholds.
+- Configurable significant figures: a header-bar spinner (1–10,
+  default 3) controls how many sig figs result cards display. The
+  value is encoded in the compressed URL state so shared links
+  preserve the teacher's choice. Changing the input re-renders all
+  result tiles immediately. Backward compatible: URLs without the
+  options segment default to 3. Harness covers format, serialize,
+  and compress round-trip with non-default values.
 
 ### In progress / next
 - Next feature: TBD. Candidates are Clear-all + Reset-to-example
@@ -86,6 +93,12 @@
   classroom use.
 
 ### Later
+- **Source ↔ preview linking.** Tighten the connection between the
+  two panes without rebuilding the editing model. Candidates:
+  click a card to scroll-to / highlight its source line; hover a
+  card to highlight the corresponding source line (and vice-versa).
+  Low-effort, high-payoff alternative to a full card-based editing
+  refactor.
 - **Clear-all button.** Wipe the textarea and library in one click
   (navigating to a bare `?doc` URL). Needs a confirm prompt since
   it's destructive. Recents will still contain the prior state so
@@ -102,9 +115,8 @@
 - Unicode superscripts accepted in source
 - Parentheses in unit expressions
 - Fractional unit exponents
-- Minimum sig figs derived from inputs (the current 3-sig-fig cap is a
-  ceiling; add a floor)
-- Configurable max sig figs
+- Minimum sig figs derived from inputs (the configurable sig-fig count
+  is a ceiling; add a floor)
 - Strict-teaching sig-figs mode (display exactly the min sig figs of
   the inputs)
 - Inline rendering inside the textarea (would require swapping the

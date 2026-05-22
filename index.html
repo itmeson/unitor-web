@@ -55,6 +55,33 @@
 			position: relative;
 		}
 
+		.sigfigs-control {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.35rem;
+			font-size: 0.85rem;
+			color: var(--unitor-text-muted, #666);
+			white-space: nowrap;
+			cursor: default;
+		}
+
+		.sigfigs-input {
+			width: 2.8rem;
+			padding: 0.25rem 0.35rem;
+			border: 1px solid var(--unitor-background-modifier-border, #ccc);
+			border-radius: 4px;
+			background: var(--unitor-background-secondary, #f6f6f6);
+			color: var(--unitor-text-normal, #222);
+			font: inherit;
+			font-size: 0.85rem;
+			text-align: center;
+		}
+
+		.sigfigs-input:focus {
+			outline: 2px solid var(--unitor-text-muted, #888);
+			outline-offset: 1px;
+		}
+
 		.app-button {
 			appearance: none;
 			border: 1px solid var(--unitor-background-modifier-border, #ccc);
@@ -224,6 +251,11 @@
 				background: var(--unitor-interactive-hover, #eaeaea);
 			}
 
+			header .actions .sigfigs-control {
+				padding: 0.55rem 0.9rem;
+				font-size: 0.9rem;
+			}
+
 			/* Recents dropdown inside the mobile menu needs to be
 			   relative-positioned rather than absolute so it doesn't
 			   float off-screen. */
@@ -261,6 +293,17 @@
 			title="Menu"
 		>&#x22EE;</button>
 		<div class="actions" id="header-actions">
+			<label class="sigfigs-control" title="Significant figures shown on result cards">
+				Sig figs
+				<input
+					id="sigfigs-input"
+					type="number"
+					min="1"
+					max="10"
+					value="3"
+					class="sigfigs-input"
+				/>
+			</label>
 			<button
 				id="recents-toggle"
 				class="app-button"

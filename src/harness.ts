@@ -46,6 +46,7 @@ import {
 	decodeState,
 	toBase64url,
 	fromBase64url,
+	DEFAULT_SIG_FIGS,
 } from './compress';
 
 interface Case {
@@ -876,6 +877,55 @@ test('compress: labelForUrl still works on legacy ?lib=/#source URLs', () => {
 	// Ensure old recents entries still label correctly.
 	const src = encodeURIComponent('# old format test\n5 km');
 	assertEq(labelForUrl(`/#${src}`), 'old format test');
+});
+
+// ---------- sigFigs ----------
+
+test('formatResultValue: custom sigFigs rounds correctly', () => {
+	assertEq(formatResultValue(1234, 1), '1000');
+	assertEq(formatResultValue(1234, 2), '1200');
+	assertEq(formatResultValue(1234, 4), '1234');
+	assertEq(formatResultValue(1234, 5), '1234');
+	assertEq(formatResultValue(0.001389, 2), '0.0014');
+});
+
+test('formatResultValue: sigFigs in scientific notation', () => {
+	assertEq(formatResultValue(6.022e23, 4), '6.022 × 10²³');
+	assertEq(formatResultValue(6.022e23, 2), '6 × 10²³');
+});
+
+test('serializeResultValue: custom sigFigs', () => {
+	assertEq(serializeResultValue(6.022e23, 4), '6.022*10^23');
+	assertEq(serializeResultValue(1234, 2), '1200');
+});
+
+test('compress: encodeState/decodeState round-trips sigFigs', () => {
+	const source = '5 km';
+	const lib = emptyLibrary();
+	const encoded = encodeState(source, lib, 5);
+	assertEq(encoded !== null, true);
+	const decoded = decodeState(encoded!);
+	assertEq(decoded !== null, true);
+	assertEq(decoded!.source, source);
+	assertEq(decoded!.sigFigs, 5);
+});
+
+test('compress: default sigFigs omitted from payload (backward compat)', () => {
+	const source = '5 km';
+	const lib = emptyLibrary();
+	// Default sigFigs should produce same encoding as before.
+	const withDefault = encodeState(source, lib, DEFAULT_SIG_FIGS);
+	const withoutArg = encodeState(source, lib);
+	assertEq(withDefault, withoutArg);
+});
+
+test('compress: old URLs without options segment get default sigFigs', () => {
+	// Encode without sigFigs option (simulates pre-sigFigs URL)
+	const source = '10 m/s';
+	const lib = emptyLibrary();
+	const encoded = encodeState(source, lib);
+	const decoded = decodeState(encoded!);
+	assertEq(decoded!.sigFigs, DEFAULT_SIG_FIGS);
 });
 
 // ---------- expression evaluator ----------

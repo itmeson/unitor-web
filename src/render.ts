@@ -69,6 +69,8 @@ export interface RenderCallbacks {
 	onCopy?: OnCopyCallback;
 	onSave?: OnSaveCallback;
 	isSaved?: IsSavedPredicate;
+	/** Significant figures for result-card values. Defaults to 3. */
+	sigFigs?: number;
 }
 
 /** Build the snippet inserted when a factor card's copy button is clicked. */
@@ -82,9 +84,10 @@ function factorSnippet(rawLine: string, label: string | undefined): string {
 function resultSnippet(
 	value: number,
 	residualUnits: UnitTerm[],
-	resultLabel: string | undefined
+	resultLabel: string | undefined,
+	sigFigs: number = 3
 ): string {
-	const factorLine = serializeResultAsFactorLine(value, residualUnits);
+	const factorLine = serializeResultAsFactorLine(value, residualUnits, sigFigs);
 	if (resultLabel) return `#${resultLabel}\n${factorLine}`;
 	return factorLine;
 }
@@ -325,7 +328,7 @@ function appendParsedBlock(
 	callbacks: RenderCallbacks
 ): void {
 	const { factors, errors, resultLabel } = parsed;
-	const { onFlip, onCopy, onSave, isSaved } = callbacks;
+	const { onFlip, onCopy, onSave, isSaved, sigFigs = 3 } = callbacks;
 	const container = child(host, 'div', { className: 'dimensional-block' });
 
 	if (factors.length > 0) {
@@ -390,7 +393,7 @@ function appendParsedBlock(
 		const resultTop = child(resultCard, 'div', { className: 'dimensional-cell' });
 		child(resultTop, 'span', {
 			className: 'dimensional-value',
-			text: formatResultValue(value),
+			text: formatResultValue(value, sigFigs),
 		});
 		if (posRes.length > 0) {
 			child(resultTop, 'span', { text: ' ' });
@@ -406,7 +409,7 @@ function appendParsedBlock(
 		if (onCopy) {
 			attachCopyButton(
 				resultWrap,
-				resultSnippet(value, residualUnits, resultLabel),
+				resultSnippet(value, residualUnits, resultLabel, sigFigs),
 				onCopy
 			);
 		}
