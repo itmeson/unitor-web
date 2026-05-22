@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Tutorial Title — Unitor</title>
+	<style>
+		/* ── Reset & base ────────────────────────────────────── */
+		*, *::before, *::after { box-sizing: border-box; }
+
+		:root {
+			--tut-font: system-ui, -apple-system, sans-serif;
+			--tut-font-mono: ui-monospace, Menlo, Consolas, monospace;
+			--tut-max-width: 48rem;
+			--tut-text: #1a1a1a;
+			--tut-muted: #555;
+			--tut-bg: #fdfdfd;
+			--tut-border: #ddd;
+			--tut-accent: #2e75b6;
+			--tut-code-bg: #f4f4f4;
+		}
+
+		@media (prefers-color-scheme: dark) {
+			:root {
+				--tut-text: #e0e0e0;
+				--tut-muted: #aaa;
+				--tut-bg: #1e1e1e;
+				--tut-border: #333;
+				--tut-accent: #5ba3d9;
+				--tut-code-bg: #2a2a2a;
+			}
+		}
+
+		html, body {
+			margin: 0;
+			padding: 0;
+			font-family: var(--tut-font);
+			font-size: 1rem;
+			line-height: 1.6;
+			color: var(--tut-text);
+			background: var(--tut-bg);
+		}
+
+		/* ── Layout ──────────────────────────────────────────── */
+		.tutorial {
+			max-width: var(--tut-max-width);
+			margin: 0 auto;
+			padding: 2rem 1.5rem 4rem;
+		}
+
+		/* ── Typography ──────────────────────────────────────── */
+		h1 {
+			font-size: 1.8rem;
+			font-weight: 700;
+			margin: 0 0 0.25rem;
+			line-height: 1.2;
+		}
+
+		.subtitle {
+			font-size: 1rem;
+			color: var(--tut-muted);
+			margin: 0 0 2rem;
+		}
+
+		h2 {
+			font-size: 1.3rem;
+			font-weight: 600;
+			margin: 2.5rem 0 0.75rem;
+			padding-top: 1.5rem;
+			border-top: 1px solid var(--tut-border);
+		}
+
+		h2:first-of-type {
+			border-top: none;
+			padding-top: 0;
+		}
+
+		p {
+			margin: 0 0 1rem;
+		}
+
+		code {
+			font-family: var(--tut-font-mono);
+			font-size: 0.9em;
+			background: var(--tut-code-bg);
+			padding: 0.15em 0.4em;
+			border-radius: 3px;
+		}
+
+		pre {
+			font-family: var(--tut-font-mono);
+			font-size: 0.85rem;
+			background: var(--tut-code-bg);
+			padding: 1rem;
+			border-radius: 6px;
+			overflow-x: auto;
+			margin: 0 0 1rem;
+		}
+
+		pre code {
+			background: none;
+			padding: 0;
+		}
+
+		/* ── Figures / screenshots ───────────────────────────── */
+		figure {
+			margin: 1.5rem 0;
+		}
+
+		figure img {
+			display: block;
+			max-width: 100%;
+			height: auto;
+			border: 1px solid var(--tut-border);
+			border-radius: 6px;
+		}
+
+		figcaption {
+			font-size: 0.85rem;
+			color: var(--tut-muted);
+			margin-top: 0.5rem;
+		}
+
+		/* ── Calculator embed ────────────────────────────────── */
+		.calculator-embed {
+			margin: 1.5rem 0;
+			border: 1px solid var(--tut-border);
+			border-radius: 6px;
+			overflow: hidden;
+		}
+
+		.calculator-embed iframe {
+			display: block;
+			width: 100%;
+			height: 20rem;
+			border: none;
+		}
+
+		.calculator-embed .embed-caption {
+			font-size: 0.8rem;
+			color: var(--tut-muted);
+			padding: 0.4rem 0.75rem;
+			border-top: 1px solid var(--tut-border);
+			background: var(--tut-code-bg);
+		}
+
+		/* Taller embed variant for complex examples */
+		.calculator-embed.tall iframe {
+			height: 28rem;
+		}
+
+		/* ── Callout boxes ───────────────────────────────────── */
+		.callout {
+			margin: 1.5rem 0;
+			padding: 1rem 1.25rem;
+			border-left: 4px solid var(--tut-accent);
+			background: var(--tut-code-bg);
+			border-radius: 0 6px 6px 0;
+		}
+
+		.callout p:last-child {
+			margin-bottom: 0;
+		}
+
+		/* ── Navigation ──────────────────────────────────────── */
+		.nav-footer {
+			margin-top: 3rem;
+			padding-top: 1.5rem;
+			border-top: 1px solid var(--tut-border);
+			display: flex;
+			justify-content: space-between;
+			font-size: 0.9rem;
+		}
+
+		.nav-footer a {
+			color: var(--tut-accent);
+			text-decoration: none;
+		}
+
+		.nav-footer a:hover {
+			text-decoration: underline;
+		}
+	</style>
+</head>
+<body>
+	<article class="tutorial">
+
+		<h1>Tutorial Title</h1>
+		<p class="subtitle">A one-line description of what this tutorial covers.</p>
+
+		<!-- ─── Section 1 ─────────────────────────────────── -->
+		<h2>Section Heading</h2>
+
+		<p>
+			Explanatory text goes here. You can use <code>inline code</code>
+			for unit expressions or source syntax.
+		</p>
+
+		<p>
+			Describe what the student should observe in the calculator
+			below, or what they should try typing.
+		</p>
+
+		<!-- Calculator embed: change the src URL to load a specific
+		     example. Use a ?d= URL from the "Copy share link" button
+		     to capture any source + library + sig figs state. -->
+		<div class="calculator-embed">
+			<iframe
+				src="../?d=PASTE_SHARE_LINK_QUERY_HERE"
+				title="Unitor calculator — example name"
+				loading="lazy"
+			></iframe>
+			<div class="embed-caption">
+				Try editing the factors above to see how the result changes.
+			</div>
+		</div>
+
+		<!-- ─── Section 2 ─────────────────────────────────── -->
+		<h2>Another Section</h2>
+
+		<p>More explanation. You can show the source syntax students should type:</p>
+
+		<pre><code>#speed in miles per hour
+30 mile/hr
+1609 meters / 1 mile
+1 hr / 60 min
+1 min / 60 sec
+#speed in meters per sec</code></pre>
+
+		<!-- Optional screenshot -->
+		<figure>
+			<img src="screenshots/example.png" alt="Description of what the screenshot shows" />
+			<figcaption>Caption describing the screenshot.</figcaption>
+		</figure>
+
+		<!-- Callout for tips or warnings -->
+		<div class="callout">
+			<p>
+				<strong>Tip:</strong> Click the ⇅ button on any card to flip
+				its numerator and denominator.
+			</p>
+		</div>
+
+		<!-- Another calculator with a different example -->
+		<div class="calculator-embed tall">
+			<iframe
+				src="../?d=PASTE_ANOTHER_SHARE_LINK_HERE"
+				title="Unitor calculator — second example"
+				loading="lazy"
+			></iframe>
+		</div>
+
+		<!-- ─── Navigation ────────────────────────────────── -->
+		<nav class="nav-footer">
+			<a href="previous-tutorial.html">&larr; Previous: Topic Name</a>
+			<a href="next-tutorial.html">Next: Topic Name &rarr;</a>
+		</nav>
+
+	</article>
+</body>
+</html>

@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Workbench Title — Unitor</title>
+	<style>
+		/* ── Reset & base ────────────────────────────────────── */
+		*, *::before, *::after { box-sizing: border-box; }
+
+		:root {
+			--wb-font: system-ui, -apple-system, sans-serif;
+			--wb-font-mono: ui-monospace, Menlo, Consolas, monospace;
+			--wb-text: #1a1a1a;
+			--wb-muted: #555;
+			--wb-bg: #fdfdfd;
+			--wb-border: #ddd;
+			--wb-accent: #2e75b6;
+			--wb-code-bg: #f4f4f4;
+			--wb-instructions-width: 40%;
+		}
+
+		@media (prefers-color-scheme: dark) {
+			:root {
+				--wb-text: #e0e0e0;
+				--wb-muted: #aaa;
+				--wb-bg: #1e1e1e;
+				--wb-border: #333;
+				--wb-accent: #5ba3d9;
+				--wb-code-bg: #2a2a2a;
+			}
+		}
+
+		html, body {
+			margin: 0;
+			padding: 0;
+			height: 100%;
+			font-family: var(--wb-font);
+			font-size: 1rem;
+			line-height: 1.6;
+			color: var(--wb-text);
+			background: var(--wb-bg);
+		}
+
+		/* ── Two-column layout ───────────────────────────────── */
+		.workbench {
+			display: grid;
+			grid-template-columns: var(--wb-instructions-width) auto 1fr;
+			height: 100vh;
+		}
+
+		/* ── Instructions pane (left / top) ──────────────────── */
+		.instructions {
+			overflow-y: auto;
+			padding: 2rem 2rem 4rem;
+			min-width: 200px;
+		}
+
+		/* ── Drag handle ─────────────────────────────────────── */
+		.resize-handle {
+			width: 6px;
+			cursor: col-resize;
+			background: var(--wb-border);
+			transition: background 0.15s ease;
+			position: relative;
+		}
+
+		.resize-handle:hover,
+		.resize-handle.is-dragging {
+			background: var(--wb-accent);
+		}
+
+		.resize-handle::after {
+			content: '';
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			width: 2px;
+			height: 2rem;
+			border-radius: 1px;
+			background: var(--wb-muted);
+			opacity: 0.5;
+		}
+
+		.resize-handle:hover::after,
+		.resize-handle.is-dragging::after {
+			opacity: 0;
+		}
+
+		/* ── Calculator pane (right / bottom) ────────────────── */
+		.calculator-pane {
+			display: flex;
+			flex-direction: column;
+			min-height: 0;
+		}
+
+		.calculator-pane .pane-header {
+			font-size: 0.75rem;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			color: var(--wb-muted);
+			padding: 0.5rem 0.75rem;
+			border-bottom: 1px solid var(--wb-border);
+			flex-shrink: 0;
+		}
+
+		.calculator-pane iframe {
+			flex: 1;
+			width: 100%;
+			border: none;
+			min-height: 0;
+		}
+
+		/* ── Typography ──────────────────────────────────────── */
+		h1 {
+			font-size: 1.6rem;
+			font-weight: 700;
+			margin: 0 0 0.25rem;
+			line-height: 1.2;
+		}
+
+		.subtitle {
+			font-size: 0.95rem;
+			color: var(--wb-muted);
+			margin: 0 0 2rem;
+		}
+
+		h2 {
+			font-size: 1.2rem;
+			font-weight: 600;
+			margin: 2rem 0 0.75rem;
+		}
+
+		p {
+			margin: 0 0 1rem;
+		}
+
+		code {
+			font-family: var(--wb-font-mono);
+			font-size: 0.9em;
+			background: var(--wb-code-bg);
+			padding: 0.15em 0.4em;
+			border-radius: 3px;
+		}
+
+		pre {
+			font-family: var(--wb-font-mono);
+			font-size: 0.85rem;
+			background: var(--wb-code-bg);
+			padding: 1rem;
+			border-radius: 6px;
+			overflow-x: auto;
+			margin: 0 0 1rem;
+		}
+
+		pre code {
+			background: none;
+			padding: 0;
+		}
+
+		/* ── Figures ─────────────────────────────────────────── */
+		figure {
+			margin: 1.5rem 0;
+		}
+
+		figure img {
+			display: block;
+			max-width: 100%;
+			height: auto;
+			border: 1px solid var(--wb-border);
+			border-radius: 6px;
+		}
+
+		figcaption {
+			font-size: 0.85rem;
+			color: var(--wb-muted);
+			margin-top: 0.5rem;
+		}
+
+		/* ── Steps list ──────────────────────────────────────── */
+		.steps {
+			counter-reset: step;
+			list-style: none;
+			padding: 0;
+			margin: 1rem 0;
+		}
+
+		.steps li {
+			counter-increment: step;
+			position: relative;
+			padding-left: 2.2rem;
+			margin-bottom: 1.25rem;
+		}
+
+		.steps li::before {
+			content: counter(step);
+			position: absolute;
+			left: 0;
+			top: 0.1em;
+			width: 1.6rem;
+			height: 1.6rem;
+			background: var(--wb-accent);
+			color: #fff;
+			font-size: 0.8rem;
+			font-weight: 700;
+			border-radius: 50%;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+
+		/* ── Callout ─────────────────────────────────────────── */
+		.callout {
+			margin: 1.5rem 0;
+			padding: 1rem 1.25rem;
+			border-left: 4px solid var(--wb-accent);
+			background: var(--wb-code-bg);
+			border-radius: 0 6px 6px 0;
+		}
+
+		.callout p:last-child {
+			margin-bottom: 0;
+		}
+
+		/* ── Responsive: stack on narrow screens ─────────────── */
+		@media (max-width: 768px) {
+			.workbench {
+				grid-template-columns: 1fr;
+				grid-template-rows: 1fr 50vh;
+				height: auto;
+				min-height: 100vh;
+			}
+
+			.resize-handle {
+				display: none;
+			}
+
+			.instructions {
+				border-bottom: 1px solid var(--wb-border);
+				padding: 1.5rem 1rem 2rem;
+			}
+		}
+	</style>
+</head>
+<body>
+	<div class="workbench">
+
+		<!-- ─── Left: scrollable instructions ─────────────── -->
+		<div class="instructions">
+
+			<h1>Workbench Title</h1>
+			<p class="subtitle">Follow along step by step in the calculator on the right.</p>
+
+			<h2>Getting Started</h2>
+
+			<p>
+				Introductory explanation. The calculator on the right is
+				pre-loaded with the starting state for this exercise.
+			</p>
+
+			<ol class="steps">
+				<li>
+					<p>
+						First instruction. Tell the student what to type or
+						observe. Use <code>inline code</code> for source
+						syntax.
+					</p>
+				</li>
+				<li>
+					<p>
+						Second instruction. You can include source blocks
+						for them to type:
+					</p>
+					<pre><code>1609 meters / 1 mile</code></pre>
+				</li>
+				<li>
+					<p>
+						Third instruction. Describe what they should see in
+						the result card after adding this factor.
+					</p>
+				</li>
+			</ol>
+
+			<h2>Next Concept</h2>
+
+			<p>
+				More explanation building on the previous section.
+			</p>
+
+			<!-- Optional screenshot showing expected state -->
+			<figure>
+				<img src="screenshots/expected-state.png" alt="Calculator showing the completed chain" />
+				<figcaption>Your calculator should look like this after step 3.</figcaption>
+			</figure>
+
+			<div class="callout">
+				<p>
+					<strong>Check:</strong> Your result card should show
+					<code>13.4 meters/sec</code>. If not, look for a
+					mismatched unit in your chain.
+				</p>
+			</div>
+
+			<h2>Practice</h2>
+
+			<p>
+				Now try these on your own. Clear the calculator and set up
+				a new chain to convert...
+			</p>
+
+		</div>
+
+		<!-- ─── Resize handle ─────────────────────────────── -->
+		<div class="resize-handle" title="Drag to resize"></div>
+
+		<!-- ─── Right: sticky calculator ──────────────────── -->
+		<div class="calculator-pane">
+			<div class="pane-header">Calculator</div>
+			<!-- Change src to a ?d= URL from "Copy share link" to
+			     pre-load the starting state for this exercise.
+			     Use ../ if co-hosted, or the full GitHub Pages URL
+			     if embedding from Canvas / another site. -->
+			<iframe
+				src="../?d=PASTE_SHARE_LINK_QUERY_HERE"
+				title="Unitor calculator"
+			></iframe>
+		</div>
+
+	</div>
+
+	<script>
+	(function () {
+		const workbench = document.querySelector('.workbench');
+		const handle = document.querySelector('.resize-handle');
+		const calcPane = document.querySelector('.calculator-pane');
+		if (!workbench || !handle || !calcPane) return;
+
+		let dragging = false;
+
+		handle.addEventListener('mousedown', startDrag);
+		handle.addEventListener('touchstart', startDrag, { passive: false });
+
+		function startDrag(e) {
+			e.preventDefault();
+			dragging = true;
+			handle.classList.add('is-dragging');
+			// Prevent the iframe from swallowing pointer events while dragging.
+			calcPane.style.pointerEvents = 'none';
+			document.addEventListener('mousemove', onDrag);
+			document.addEventListener('touchmove', onDrag, { passive: false });
+			document.addEventListener('mouseup', stopDrag);
+			document.addEventListener('touchend', stopDrag);
+		}
+
+		function onDrag(e) {
+			if (!dragging) return;
+			const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+			const rect = workbench.getBoundingClientRect();
+			const pct = ((clientX - rect.left) / rect.width) * 100;
+			// Clamp between 15% and 80%.
+			const clamped = Math.min(80, Math.max(15, pct));
+			workbench.style.gridTemplateColumns = clamped + '% auto 1fr';
+		}
+
+		function stopDrag() {
+			dragging = false;
+			handle.classList.remove('is-dragging');
+			calcPane.style.pointerEvents = '';
+			document.removeEventListener('mousemove', onDrag);
+			document.removeEventListener('touchmove', onDrag);
+			document.removeEventListener('mouseup', stopDrag);
+			document.removeEventListener('touchend', stopDrag);
+		}
+	})();
+	</script>
+</body>
+</html>
