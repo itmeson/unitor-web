@@ -168,6 +168,19 @@
 	display: flex;
 	flex-direction: column;
 	align-items: center;
+	cursor: pointer;
+	border-radius: 6px;
+	padding: 2px;
+	transition: box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.dimensional-card-wrap[data-source-line]:hover {
+	background: var(--unitor-interactive-hover, rgba(0, 0, 0, 0.03));
+}
+
+.dimensional-card-wrap.is-linked {
+	box-shadow: 0 0 0 2px var(--unitor-text-muted, #888);
+	background: var(--unitor-interactive-hover, rgba(0, 0, 0, 0.03));
 }
 
 .dimensional-flip-btn {

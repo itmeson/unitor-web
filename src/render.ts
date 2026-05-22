@@ -340,7 +340,10 @@ function appendParsedBlock(
 			if (i > 0) {
 				child(row, 'div', { className: 'dimensional-op', text: '×' });
 			}
-			const cardWrap = child(row, 'div', { className: 'dimensional-card-wrap' });
+			const cardWrap = child(row, 'div', {
+				className: 'dimensional-card-wrap',
+				attrs: { 'data-source-line': String(f.sourceLine) },
+			});
 			if (f.label) {
 				child(cardWrap, 'div', { className: 'dimensional-label', text: f.label });
 			}

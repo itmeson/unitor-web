@@ -78,6 +78,11 @@
   line, then a library-size hint, then "(empty calculator)") and its
   save time relative to now. Harness covers dedup, cap, label
   priority, empty-URL refusal, and relative-time thresholds.
+- Source ↔ preview linking: clicking a card in the preview selects
+  and scrolls to its source line in the textarea; moving the cursor
+  in the textarea highlights the corresponding card with a subtle
+  ring. Uses `data-source-line` attributes on card wrappers and
+  event delegation — no callbacks needed in the renderer.
 - Configurable significant figures: a header-bar spinner (1–10,
   default 3) controls how many sig figs result cards display. The
   value is encoded in the compressed URL state so shared links
@@ -93,12 +98,6 @@
   classroom use.
 
 ### Later
-- **Source ↔ preview linking.** Tighten the connection between the
-  two panes without rebuilding the editing model. Candidates:
-  click a card to scroll-to / highlight its source line; hover a
-  card to highlight the corresponding source line (and vice-versa).
-  Low-effort, high-payoff alternative to a full card-based editing
-  refactor.
 - **Clear-all button.** Wipe the textarea and library in one click
   (navigating to a bare `?doc` URL). Needs a confirm prompt since
   it's destructive. Recents will still contain the prior state so

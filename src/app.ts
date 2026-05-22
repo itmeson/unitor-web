@@ -688,6 +688,83 @@ function boot(): void {
 	});
 
 
+	// ---------- source ↔ preview linking ----------
+
+	/**
+	 * Given a 0-based line index, select that line in the textarea and
+	 * scroll it into view. Used when clicking a card in the preview.
+	 */
+	function scrollToSourceLine(lineIndex: number): void {
+		const lines = textarea.value.split('\n');
+		if (lineIndex < 0 || lineIndex >= lines.length) return;
+		let start = 0;
+		for (let i = 0; i < lineIndex; i++) start += lines[i]!.length + 1;
+		const end = start + (lines[lineIndex]?.length ?? 0);
+		// Set selection before focusing — focus triggers
+		// updateHighlightFromCursor, and we need the cursor already in
+		// the right place when that fires.
+		textarea.setSelectionRange(start, end);
+		textarea.focus();
+		// Scroll the textarea so the selected line is visible. There's
+		// no native "scroll selection into view" for textareas, but we
+		// can approximate by setting scrollTop proportionally.
+		const lineHeight = textarea.scrollHeight / lines.length;
+		const targetScroll = lineIndex * lineHeight - textarea.clientHeight / 3;
+		textarea.scrollTop = Math.max(0, targetScroll);
+		// Ensure the clicked card is highlighted even if the focus event
+		// ran with stale cursor state.
+		highlightCardForLine(lineIndex);
+	}
+
+	/**
+	 * Highlight the card in the preview that corresponds to the given
+	 * source line. Removes the highlight from all other cards.
+	 */
+	function highlightCardForLine(lineIndex: number): void {
+		const allWraps = preview.querySelectorAll('.dimensional-card-wrap[data-source-line]');
+		for (const wrap of allWraps) {
+			const sl = Number((wrap as HTMLElement).dataset['sourceLine']);
+			(wrap as HTMLElement).classList.toggle('is-linked', sl === lineIndex);
+		}
+	}
+
+	/** Clear all card highlights. */
+	function clearCardHighlights(): void {
+		const linked = preview.querySelectorAll('.dimensional-card-wrap.is-linked');
+		for (const el of linked) el.classList.remove('is-linked');
+	}
+
+	// Card click → scroll to source line. Delegate on the preview pane;
+	// ignore clicks that land on buttons (flip, copy, star) since those
+	// have their own handlers.
+	preview.addEventListener('click', (ev) => {
+		const target = ev.target as HTMLElement;
+		// Don't interfere with button clicks inside cards.
+		if (target.closest('button')) return;
+		const wrap = target.closest('.dimensional-card-wrap[data-source-line]') as HTMLElement | null;
+		if (!wrap) return;
+		const lineIndex = Number(wrap.dataset['sourceLine']);
+		if (Number.isFinite(lineIndex)) {
+			scrollToSourceLine(lineIndex);
+		}
+	});
+
+	// Source cursor → highlight card. Track selection changes so that
+	// clicking or arrow-keying through the textarea highlights the card
+	// matching the current line.
+	function updateHighlightFromCursor(): void {
+		const pos = textarea.selectionStart;
+		// Count newlines before the cursor to determine the current line.
+		const textBefore = textarea.value.slice(0, pos);
+		const lineIndex = textBefore.split('\n').length - 1;
+		highlightCardForLine(lineIndex);
+	}
+
+	textarea.addEventListener('click', updateHighlightFromCursor);
+	textarea.addEventListener('keyup', updateHighlightFromCursor);
+	textarea.addEventListener('focus', updateHighlightFromCursor);
+	textarea.addEventListener('blur', clearCardHighlights);
+
 	shareBtn.addEventListener('click', () => {
 		void copyShareLink(shareBtn);
 	});
