@@ -38,6 +38,7 @@ jobs:
                 cp index.html _site/
                 cp styles.css _site/
                 cp dist/app.js _site/dist/
+                cp -r tutorials _site/
             - name: Upload Pages artifact
               uses: actions/upload-pages-artifact@v3
               with:
